@@ -6,3 +6,5 @@ work/yf_cache/
 work/yfinance-cache/
 **/graphify-out/cache/
 .worktrees/
+data/dashboard_v1/
+outputs/dashboard_v1/

@@ -116,3 +116,18 @@ Il report usa soltanto mesi conclusi e realmente comuni. Riporta rendimenti e va
 ```
 
 Tests are local and do not require internet access.
+
+## App locale Analisi ETF
+
+Per usare l'applicazione dal desktop:
+
+1. eseguire una volta `scripts\install_dashboard_shortcut.ps1` per creare il collegamento `Analisi ETF`;
+2. fare doppio clic su `Analisi ETF`;
+3. controllare i dati già salvati e premere `Aggiorna dati` solo quando si desidera aggiornarli;
+4. aggiungere un ETF tramite simbolo oppure ISIN;
+5. modificare i pesi del portafoglio e, se necessario, ripristinare la composizione predefinita 60/15/15/10;
+6. calcolare un confronto storico;
+7. scaricare i CSV disponibili;
+8. chiudere la finestra del lanciatore per arrestare l'app locale.
+
+Chronos è visibile ma non attivo nella versione 1.
