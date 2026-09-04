@@ -110,6 +110,18 @@ class PortfolioFixture(unittest.TestCase):
 
 
 class PortfolioConfigTests(PortfolioFixture):
+    def test_runtime_config_can_use_an_explicit_project_root(self):
+        from perpetual_engine.portfolio_monitor import load_portfolio_config
+
+        runtime = self.root / "data" / "dashboard_v1" / "runtime.json"
+        runtime.parent.mkdir(parents=True)
+        runtime.write_bytes(self.config_path.read_bytes())
+
+        config = load_portfolio_config(runtime, project_root=self.root)
+
+        self.assertEqual(config.project_root, self.root.resolve())
+        self.assertEqual(config.data_root, (self.root / "data" / "portfolio_p_v1").resolve())
+
     def test_accepts_unique_eur_etfs_for_single_asset_studies(self):
         from perpetual_engine.portfolio_monitor import load_portfolio_config
 
@@ -189,12 +201,12 @@ class PortfolioArithmeticTests(PortfolioFixture):
             name: {
                 date(2024, 12, 31): 100.0,
                 date(2025, 1, 31): 101.0,
-                date(2025, 2, 25): 102.0,
+                date(2025, 2, 25): 102.0,  # Still within the seven-day month-end staleness window.
             }
             for name in ("SWDA", "IWMO", "IWQU", "DBMFE")
         }
 
-        rows = portfolio_rows(config, prices, as_of=date(2025, 2, 25))
+        rows = portfolio_rows(config, prices, as_of=date(2025, 2, 27))
 
         self.assertEqual([row.month for row in rows], [date(2025, 1, 31)])
 
@@ -250,6 +262,35 @@ class PortfolioArithmeticTests(PortfolioFixture):
 
 
 class PortfolioFrozenReportTests(PortfolioFixture):
+    def test_comparison_exposes_volatility_drawdown_and_component_contributions(self):
+        from perpetual_engine.portfolio_monitor import (
+            compare_single_etf,
+            load_current_portfolio_prices,
+            refresh_portfolio_prices,
+        )
+
+        payload = config_payload()
+        payload["studies"] = [{**STUDY}]
+        self.write_config(payload)
+        dates = months(14)
+        prices = {
+            **self.payloads(),
+            "TEST.MI": daily_bytes(list(prices_from_returns(dates, (0.04, -0.01, 0.02, 0.01, -0.03, 0.025, 0.015, -0.01, 0.005, 0.03, -0.02, 0.01, 0.02)).items())),
+        }
+        refresh_portfolio_prices(self.config_path, downloader=prices.__getitem__, retrieved_at=datetime(2026, 3, 2, tzinfo=timezone.utc))
+        config, raw, manifest = load_current_portfolio_prices(self.config_path)
+
+        result = compare_single_etf(config, raw, config.studies[0], as_of=datetime.fromisoformat(manifest["retrieved_at"]).date())
+
+        self.assertEqual(result.component_ids, ("SWDA", "IWMO", "IWQU", "DBMFE"))
+        self.assertEqual(len(result.rows), 13)
+        self.assertAlmostEqual(sum(result.rows[0].component_contributions), result.rows[0].portfolio_return)
+        self.assertAlmostEqual(sum(result.rows[-1].component_cumulative_contributions), result.rows[-1].portfolio_cumulative_value / 100.0 - 1.0)
+        self.assertIsNone(result.rows[10].etf_trailing_volatility_12m)
+        self.assertIsNotNone(result.rows[11].etf_trailing_volatility_12m)
+        self.assertLessEqual(result.rows[4].etf_drawdown, 0.0)
+        self.assertEqual(result.summary.count, 13)
+
     def test_live_download_configures_a_writable_cache_before_price_access(self):
         from perpetual_engine.portfolio_monitor import _download_yfinance
 

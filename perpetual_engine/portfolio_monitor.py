@@ -82,6 +82,49 @@ class PortfolioRow:
     trailing_volatility_12m: float | None
 
 
+@dataclass(frozen=True)
+class HistoricalComparisonRow:
+    month: date
+    etf_return: float
+    portfolio_return: float
+    etf_cumulative_value: float
+    portfolio_cumulative_value: float
+    etf_drawdown: float
+    portfolio_drawdown: float
+    etf_trailing_volatility_12m: float | None
+    portfolio_trailing_volatility_12m: float | None
+    rolling_correlation_12m: float | None
+    component_contributions: tuple[float, ...]
+    component_cumulative_contributions: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class HistoricalComparisonSummary:
+    first_month: date
+    last_month: date
+    count: int
+    etf_cumulative_return: float
+    portfolio_cumulative_return: float
+    etf_annualized_return: float
+    portfolio_annualized_return: float
+    etf_annualized_volatility: float | None
+    portfolio_annualized_volatility: float | None
+    etf_max_drawdown: float
+    portfolio_max_drawdown: float
+    correlation: float | None
+    etf_winning_months: int
+    portfolio_winning_months: int
+    tied_months: int
+
+
+@dataclass(frozen=True)
+class HistoricalComparison:
+    study: StudySpec
+    component_ids: tuple[str, ...]
+    rows: tuple[HistoricalComparisonRow, ...]
+    summary: HistoricalComparisonSummary
+
+
 def _month_end(value: date) -> date:
     return date(value.year + (value.month == 12), value.month % 12 + 1, 1) - timedelta(days=1)
 
@@ -98,7 +141,9 @@ def _is_sha256(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
-def _valid_isin(value: str) -> bool:
+def valid_isin(value: str) -> bool:
+    if not isinstance(value, str) or re.fullmatch(r"[A-Z]{2}[A-Z0-9]{10}", value) is None:
+        return False
     expanded = "".join(str(int(character, 36)) if character.isalpha() else character for character in value)
     total = 0
     for index, character in enumerate(reversed(expanded)):
@@ -107,9 +152,11 @@ def _valid_isin(value: str) -> bool:
     return total % 10 == 0
 
 
-def load_portfolio_config(path: Path) -> PortfolioConfig:
+def load_portfolio_config(path: Path, *, project_root: Path | None = None) -> PortfolioConfig:
     path = path.resolve()
-    project_root = path.parent.parent.resolve()
+    project_root = project_root.resolve() if project_root is not None else path.parent.parent.resolve()
+    if not path.is_relative_to(project_root):
+        raise ValueError("portfolio configuration escapes project root")
     try:
         payload = path.read_bytes()
         data = json.loads(payload.decode("utf-8"))
@@ -173,8 +220,7 @@ def load_portfolio_config(path: Path) -> PortfolioConfig:
             or not isinstance(ticker, str)
             or re.fullmatch(r"[A-Z0-9][A-Z0-9.=^-]{0,31}", ticker) is None
             or not isinstance(isin, str)
-            or re.fullmatch(r"[A-Z]{2}[A-Z0-9]{10}", isin) is None
-            or not _valid_isin(isin)
+            or not valid_isin(isin)
             or currency != "EUR"
             or not isinstance(identity_source_url, str)
             or not identity_source_url.startswith("https://")
@@ -390,8 +436,14 @@ def _require_config_unchanged(config: PortfolioConfig) -> None:
         raise ValueError("portfolio configuration changed during publication")
 
 
-def refresh_portfolio_prices(path: Path, *, downloader: Callable | None = None, retrieved_at: datetime | None = None) -> str:
-    config = load_portfolio_config(path)
+def refresh_portfolio_prices(
+    path: Path,
+    *,
+    project_root: Path | None = None,
+    downloader: Callable | None = None,
+    retrieved_at: datetime | None = None,
+) -> str:
+    config = load_portfolio_config(path, project_root=project_root)
     retrieved_at = retrieved_at or datetime.now(timezone.utc)
     if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
         raise ValueError("retrieved_at must be timezone-aware")
@@ -586,6 +638,16 @@ def _load_current(config: PortfolioConfig) -> tuple[dict[str, dict[date, float]]
     return raw, manifest, manifest_bytes
 
 
+def load_current_portfolio_prices(
+    path: Path,
+    *,
+    project_root: Path | None = None,
+) -> tuple[PortfolioConfig, dict[str, dict[date, float]], Mapping[str, Any]]:
+    config = load_portfolio_config(path, project_root=project_root)
+    raw, manifest, _ = _load_current(config)
+    return config, raw, MappingProxyType(dict(manifest))
+
+
 def _csv_bytes(fieldnames: tuple[str, ...], rows: list[Mapping[str, Any]]) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
@@ -697,18 +759,19 @@ def _correlation(left: list[float], right: list[float]) -> float | None:
     return value if math.isfinite(value) else None
 
 
-def write_etf_study_report(path: Path, study_id: str, output: Path) -> Path:
-    from perpetual_engine.chronos import _atomic_snapshot
-
-    config = load_portfolio_config(path)
-    study = next((item for item in config.studies if item.study_id == study_id), None)
-    if study is None:
-        raise ValueError(f"portfolio study {study_id!r} is not configured")
-    raw, vintage_manifest, vintage_manifest_bytes = _load_current(config)
-    as_of = datetime.fromisoformat(vintage_manifest["retrieved_at"]).date()
+def compare_single_etf(
+    config: PortfolioConfig,
+    raw: Mapping[str, Mapping[date, float]],
+    study: StudySpec,
+    *,
+    reference_components: tuple[ComponentSpec, ...] | None = None,
+    as_of: date | None = None,
+) -> HistoricalComparison:
+    components = config.components if reference_components is None else reference_components
+    reference_config = replace(config, components=components)
     reference = portfolio_rows(
-        config,
-        {component.component_id: raw[component.ticker] for component in config.components},
+        reference_config,
+        {component.component_id: raw[component.ticker] for component in components},
         as_of=as_of,
     )
     single_config = replace(
@@ -716,8 +779,8 @@ def write_etf_study_report(path: Path, study_id: str, output: Path) -> Path:
         components=(ComponentSpec(study.study_id, study.ticker, study.isin, "EUR", 1.0),),
     )
     single = portfolio_rows(single_config, {study.study_id: raw[study.ticker]}, as_of=as_of)
-    reference_by_month = {row.month: row.portfolio_return for row in reference}
-    single_by_month = {row.month: row.portfolio_return for row in single}
+    reference_by_month = {row.month: row for row in reference}
+    single_by_month = {row.month: row for row in single}
     common_months = sorted(reference_by_month.keys() & single_by_month.keys())
     if not common_months:
         raise ValueError("portfolio study has no common return month")
@@ -726,11 +789,14 @@ def write_etf_study_report(path: Path, study_id: str, output: Path) -> Path:
     portfolio_returns: list[float] = []
     etf_value = portfolio_value = config.starting_value
     etf_peak = portfolio_peak = config.starting_value
-    monthly_rows: list[dict[str, Any]] = []
+    cumulative_contributions = tuple(0.0 for _ in components)
+    rows: list[HistoricalComparisonRow] = []
     etf_max_drawdown = portfolio_max_drawdown = 0.0
+    etf_wins = portfolio_wins = ties = 0
     for month in common_months:
-        etf_return = single_by_month[month]
-        portfolio_return = reference_by_month[month]
+        etf_return = single_by_month[month].portfolio_return
+        reference_row = reference_by_month[month]
+        portfolio_return = reference_row.portfolio_return
         etf_returns.append(etf_return)
         portfolio_returns.append(portfolio_return)
         etf_value *= 1.0 + etf_return
@@ -741,26 +807,91 @@ def write_etf_study_report(path: Path, study_id: str, output: Path) -> Path:
         portfolio_drawdown = portfolio_value / portfolio_peak - 1.0
         etf_max_drawdown = min(etf_max_drawdown, etf_drawdown)
         portfolio_max_drawdown = min(portfolio_max_drawdown, portfolio_drawdown)
-        rolling = _correlation(etf_returns[-12:], portfolio_returns[-12:]) if len(etf_returns) >= 12 else None
-        monthly_rows.append({
-            "month": month.isoformat(),
-            "etf_return": etf_return,
-            "portfolio_return": portfolio_return,
-            "etf_cumulative_value": etf_value,
-            "portfolio_cumulative_value": portfolio_value,
-            "cumulative_difference": etf_value - portfolio_value,
-            "rolling_correlation_12m": rolling,
-        })
+        contributions = tuple(
+            component.weight * component_return
+            for component, component_return in zip(components, reference_row.component_returns)
+        )
+        cumulative_contributions = tuple(
+            previous * (1.0 + portfolio_return) + monthly
+            for previous, monthly in zip(cumulative_contributions, contributions)
+        )
+        if etf_return > portfolio_return:
+            etf_wins += 1
+        elif portfolio_return > etf_return:
+            portfolio_wins += 1
+        else:
+            ties += 1
+        rows.append(HistoricalComparisonRow(
+            month,
+            etf_return,
+            portfolio_return,
+            etf_value,
+            portfolio_value,
+            etf_drawdown,
+            portfolio_drawdown,
+            statistics.stdev(etf_returns[-12:]) * math.sqrt(12) if len(etf_returns) >= 12 else None,
+            statistics.stdev(portfolio_returns[-12:]) * math.sqrt(12) if len(portfolio_returns) >= 12 else None,
+            _correlation(etf_returns[-12:], portfolio_returns[-12:]) if len(etf_returns) >= 12 else None,
+            contributions,
+            cumulative_contributions,
+        ))
+    count = len(rows)
+    etf_cumulative_return = etf_value / config.starting_value - 1.0
+    portfolio_cumulative_return = portfolio_value / config.starting_value - 1.0
+    return HistoricalComparison(
+        study,
+        tuple(component.component_id for component in components),
+        tuple(rows),
+        HistoricalComparisonSummary(
+            common_months[0],
+            common_months[-1],
+            count,
+            etf_cumulative_return,
+            portfolio_cumulative_return,
+            (1.0 + etf_cumulative_return) ** (12.0 / count) - 1.0,
+            (1.0 + portfolio_cumulative_return) ** (12.0 / count) - 1.0,
+            statistics.stdev(etf_returns) * math.sqrt(12) if count >= 2 else None,
+            statistics.stdev(portfolio_returns) * math.sqrt(12) if count >= 2 else None,
+            etf_max_drawdown,
+            portfolio_max_drawdown,
+            _correlation(etf_returns, portfolio_returns),
+            etf_wins,
+            portfolio_wins,
+            ties,
+        ),
+    )
+
+
+def write_etf_study_report(path: Path, study_id: str, output: Path) -> Path:
+    from perpetual_engine.chronos import _atomic_snapshot
+
+    config = load_portfolio_config(path)
+    study = next((item for item in config.studies if item.study_id == study_id), None)
+    if study is None:
+        raise ValueError(f"portfolio study {study_id!r} is not configured")
+    raw, vintage_manifest, vintage_manifest_bytes = _load_current(config)
+    comparison = compare_single_etf(
+        config,
+        raw,
+        study,
+        as_of=datetime.fromisoformat(vintage_manifest["retrieved_at"]).date(),
+    )
+    metrics = comparison.summary
     monthly = _csv_bytes(
         (
             "month", "etf_return", "portfolio_return", "etf_cumulative_value",
             "portfolio_cumulative_value", "cumulative_difference", "rolling_correlation_12m",
         ),
-        monthly_rows,
+        [{
+            "month": row.month.isoformat(),
+            "etf_return": row.etf_return,
+            "portfolio_return": row.portfolio_return,
+            "etf_cumulative_value": row.etf_cumulative_value,
+            "portfolio_cumulative_value": row.portfolio_cumulative_value,
+            "cumulative_difference": row.etf_cumulative_value - row.portfolio_cumulative_value,
+            "rolling_correlation_12m": row.rolling_correlation_12m,
+        } for row in comparison.rows],
     )
-    count = len(common_months)
-    etf_cumulative_return = etf_value / config.starting_value - 1.0
-    portfolio_cumulative_return = portfolio_value / config.starting_value - 1.0
     summary = _csv_bytes(
         (
             "study_id", "name", "ticker", "isin", "first_month", "last_month", "count",
@@ -773,19 +904,19 @@ def write_etf_study_report(path: Path, study_id: str, output: Path) -> Path:
             "name": study.name,
             "ticker": study.ticker,
             "isin": study.isin,
-            "first_month": common_months[0].isoformat(),
-            "last_month": common_months[-1].isoformat(),
-            "count": count,
-            "etf_cumulative_return": etf_cumulative_return,
-            "portfolio_cumulative_return": portfolio_cumulative_return,
-            "cumulative_return_difference": etf_cumulative_return - portfolio_cumulative_return,
-            "etf_annualized_return": (1.0 + etf_cumulative_return) ** (12.0 / count) - 1.0,
-            "portfolio_annualized_return": (1.0 + portfolio_cumulative_return) ** (12.0 / count) - 1.0,
-            "etf_annualized_volatility": statistics.stdev(etf_returns) * math.sqrt(12) if count >= 2 else None,
-            "portfolio_annualized_volatility": statistics.stdev(portfolio_returns) * math.sqrt(12) if count >= 2 else None,
-            "etf_max_drawdown": etf_max_drawdown,
-            "portfolio_max_drawdown": portfolio_max_drawdown,
-            "correlation": _correlation(etf_returns, portfolio_returns),
+            "first_month": metrics.first_month.isoformat(),
+            "last_month": metrics.last_month.isoformat(),
+            "count": metrics.count,
+            "etf_cumulative_return": metrics.etf_cumulative_return,
+            "portfolio_cumulative_return": metrics.portfolio_cumulative_return,
+            "cumulative_return_difference": metrics.etf_cumulative_return - metrics.portfolio_cumulative_return,
+            "etf_annualized_return": metrics.etf_annualized_return,
+            "portfolio_annualized_return": metrics.portfolio_annualized_return,
+            "etf_annualized_volatility": metrics.etf_annualized_volatility,
+            "portfolio_annualized_volatility": metrics.portfolio_annualized_volatility,
+            "etf_max_drawdown": metrics.etf_max_drawdown,
+            "portfolio_max_drawdown": metrics.portfolio_max_drawdown,
+            "correlation": metrics.correlation,
         }],
     )
     generated = {
@@ -809,9 +940,9 @@ def write_etf_study_report(path: Path, study_id: str, output: Path) -> Path:
             "retrieved_at": vintage_manifest["retrieved_at"],
             "manifest_sha256": _sha256(vintage_manifest_bytes),
         },
-        "first_common_return_month": common_months[0].isoformat(),
-        "last_common_return_month": common_months[-1].isoformat(),
-        "SHORT_LIVE_HISTORY": count < config.short_history_returns,
+        "first_common_return_month": metrics.first_month.isoformat(),
+        "last_common_return_month": metrics.last_month.isoformat(),
+        "SHORT_LIVE_HISTORY": metrics.count < config.short_history_returns,
         "generated_sha256": generated,
     })
     destination = output.resolve()
