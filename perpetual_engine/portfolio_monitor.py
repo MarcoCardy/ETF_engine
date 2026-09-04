@@ -6,10 +6,11 @@ import hashlib
 import io
 import json
 import math
+import re
 import shutil
 import statistics
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -42,6 +43,16 @@ class ComponentSpec:
 
 
 @dataclass(frozen=True)
+class StudySpec:
+    study_id: str
+    name: str
+    ticker: str
+    isin: str
+    quote_currency: str
+    identity_source_url: str
+
+
+@dataclass(frozen=True)
 class PortfolioConfig:
     path: Path
     project_root: Path
@@ -57,6 +68,7 @@ class PortfolioConfig:
     investable_target_mapping: Mapping[str, str]
     proxy_caveat: str
     components: tuple[ComponentSpec, ...]
+    studies: tuple[StudySpec, ...]
     config_hash: str
 
 
@@ -86,6 +98,15 @@ def _is_sha256(value: Any) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
+def _valid_isin(value: str) -> bool:
+    expanded = "".join(str(int(character, 36)) if character.isalpha() else character for character in value)
+    total = 0
+    for index, character in enumerate(reversed(expanded)):
+        digit = int(character) * (2 if index % 2 else 1)
+        total += digit - 9 if digit > 9 else digit
+    return total % 10 == 0
+
+
 def load_portfolio_config(path: Path) -> PortfolioConfig:
     path = path.resolve()
     project_root = path.parent.parent.resolve()
@@ -97,7 +118,7 @@ def load_portfolio_config(path: Path) -> PortfolioConfig:
     expected_keys = {
         "schema_version", "portfolio_id", "base_currency", "rebalance", "starting_value",
         "data_root", "max_staleness_calendar_days", "short_live_history_returns",
-        "listing_currency_rule", "prelaunch_rule", "investable_target_mapping", "proxy_caveat", "components",
+        "listing_currency_rule", "prelaunch_rule", "investable_target_mapping", "proxy_caveat", "components", "studies",
     }
     if not isinstance(data, dict) or set(data) != expected_keys:
         raise ValueError("portfolio configuration schema is invalid")
@@ -129,6 +150,43 @@ def load_portfolio_config(path: Path) -> PortfolioConfig:
         components.append(ComponentSpec(*expected))
     if sum(Decimal(str(component.weight)) for component in components) != Decimal("1.00"):
         raise ValueError("portfolio weights must sum exactly to one")
+    raw_studies = data.get("studies")
+    if not isinstance(raw_studies, list):
+        raise ValueError("portfolio studies are invalid")
+    studies: list[StudySpec] = []
+    identities: set[str] = set()
+    tickers: set[str] = set()
+    isins: set[str] = set()
+    for raw in raw_studies:
+        if not isinstance(raw, dict) or set(raw) != {"id", "name", "ticker", "isin", "quote_currency", "identity_source_url"}:
+            raise ValueError("portfolio study schema is invalid")
+        study_id, name, ticker, isin, currency, identity_source_url = (
+            raw.get("id"), raw.get("name"), raw.get("ticker"), raw.get("isin"), raw.get("quote_currency"),
+            raw.get("identity_source_url"),
+        )
+        if (
+            not isinstance(study_id, str)
+            or re.fullmatch(r"[A-Z0-9][A-Z0-9._-]{0,31}", study_id) is None
+            or not isinstance(name, str)
+            or not name.strip()
+            or len(name) > 100
+            or not isinstance(ticker, str)
+            or re.fullmatch(r"[A-Z0-9][A-Z0-9.=^-]{0,31}", ticker) is None
+            or not isinstance(isin, str)
+            or re.fullmatch(r"[A-Z]{2}[A-Z0-9]{10}", isin) is None
+            or not _valid_isin(isin)
+            or currency != "EUR"
+            or not isinstance(identity_source_url, str)
+            or not identity_source_url.startswith("https://")
+            or study_id in identities
+            or ticker in tickers
+            or isin in isins
+        ):
+            raise ValueError("portfolio study identity is invalid or duplicated")
+        studies.append(StudySpec(study_id, name.strip(), ticker, isin, currency, identity_source_url))
+        identities.add(study_id)
+        tickers.add(ticker)
+        isins.add(isin)
     if data.get("data_root") != "data/portfolio_p_v1":
         raise ValueError("portfolio data root is invalid")
     data_root = (project_root / data["data_root"]).resolve()
@@ -137,7 +195,7 @@ def load_portfolio_config(path: Path) -> PortfolioConfig:
     return PortfolioConfig(
         path, project_root, "P_WORLD_FACTOR_TREND", "EUR", "MONTHLY_TARGET_WEIGHT", 100.0,
         data_root, 7, 36, "ALL_COMPONENTS_EUR_NO_FX", "NO_DBMFE_BACKFILL_OR_SUBSTITUTION",
-        MappingProxyType(dict(_TARGET_MAPPING)), _PROXY_CAVEAT, tuple(components), _sha256(payload),
+        MappingProxyType(dict(_TARGET_MAPPING)), _PROXY_CAVEAT, tuple(components), tuple(studies), _sha256(payload),
     )
 
 
@@ -183,12 +241,18 @@ def _daily_bytes(rows: list[tuple[date, float]]) -> bytes:
     return output.getvalue().encode()
 
 
-def _download_yfinance(ticker: str) -> bytes:
+def _download_yfinance(ticker: str, *, expected_currency: str, expected_isin: str | None = None) -> bytes:
     import yfinance as yf
 
-    history = yf.Ticker(ticker).history(period="max", auto_adjust=False, actions=False)
+    yf.set_tz_cache_location(str(Path(tempfile.gettempdir()) / "perpetual-engine-yfinance"))
+    instrument = yf.Ticker(ticker)
+    history = instrument.history(period="max", auto_adjust=False, actions=False)
     if history.empty or "Adj Close" not in history:
         raise ValueError(f"yfinance {ticker} has no adjusted-close history")
+    currency = instrument.get_history_metadata().get("currency")
+    isin = instrument.get_isin() if expected_isin is not None else None
+    if currency != expected_currency or (expected_isin is not None and isin not in (expected_isin, None, "-")):
+        raise ValueError(f"yfinance identity for {ticker} does not match configured currency/ISIN")
     rows = [(stamp.date(), float(value)) for stamp, value in history["Adj Close"].items()]
     payload = _daily_bytes(rows)
     _daily_rows(payload, ticker)
@@ -211,6 +275,28 @@ def _vintage_identity(config_hash: str, retrieved_at: str, sources: list[dict[st
         "retrieved_at": retrieved_at,
         "sources": [{"id": source["id"], "ticker": source["ticker"], "sha256": source["sha256"]} for source in sources],
     }
+
+
+def _source_specs(config: PortfolioConfig) -> tuple[tuple[str, str], ...]:
+    sources = [(component.component_id, component.ticker) for component in config.components]
+    seen = {ticker for _, ticker in sources}
+    for study in config.studies:
+        if study.ticker not in seen:
+            sources.append((f"STUDY_{study.study_id}", study.ticker))
+            seen.add(study.ticker)
+    return tuple(sources)
+
+
+def _download_identities(config: PortfolioConfig) -> dict[str, tuple[str, str | None]]:
+    identities = {component.ticker: (component.quote_currency, None) for component in config.components}
+    component_isins = {component.ticker: component.isin for component in config.components}
+    for study in config.studies:
+        if study.ticker in identities:
+            if component_isins[study.ticker] != study.isin:
+                raise ValueError("portfolio study ticker does not match the configured component ISIN")
+        else:
+            identities[study.ticker] = (study.quote_currency, study.isin)
+    return identities
 
 
 def _vintage_files(root: Path) -> dict[str, bytes]:
@@ -250,7 +336,7 @@ def _load_vintage(config: PortfolioConfig, vintage: Path, vintage_id: str, *, al
     if retrieved.tzinfo is None or retrieved.utcoffset() is None or retrieved.utcoffset() != timedelta(0):
         raise ValueError("portfolio vintage retrieval provenance must be UTC")
     sources = manifest.get("sources")
-    expected = tuple((component.component_id, component.ticker) for component in config.components)
+    expected = _source_specs(config)
     if not isinstance(sources, list) or len(sources) != len(expected):
         raise ValueError("portfolio vintage sources are invalid")
     raw: dict[str, dict[date, float]] = {}
@@ -312,6 +398,14 @@ def refresh_portfolio_prices(path: Path, *, downloader: Callable | None = None, 
     retrieved_at = retrieved_at.astimezone(timezone.utc)
     if not config.data_root.resolve().is_relative_to(config.project_root):
         raise ValueError("portfolio data root escapes project root")
+    if downloader is None:
+        identities = _download_identities(config)
+
+        def download(ticker: str) -> bytes:
+            currency, isin = identities[ticker]
+            return _download_yfinance(ticker, expected_currency=currency, expected_isin=isin)
+    else:
+        download = downloader
     config.data_root.mkdir(parents=True, exist_ok=True)
     data_root = config.data_root.resolve()
     staging_path = config.data_root / ".staging"
@@ -322,12 +416,11 @@ def refresh_portfolio_prices(path: Path, *, downloader: Callable | None = None, 
     stage = Path(tempfile.mkdtemp(prefix="refresh-portfolio-", dir=staging_root)).resolve()
     if stage.parent != staging_root:
         raise ValueError("portfolio staging directory escapes data root")
-    download = downloader or _download_yfinance
     published: Path | None = None
     try:
         (stage / "raw").mkdir()
         sources: list[dict[str, str]] = []
-        expected = tuple((component.component_id, component.ticker) for component in config.components)
+        expected = _source_specs(config)
         for source_id, ticker in expected:
             payload = download(ticker)
             _daily_rows(payload, ticker)
@@ -391,7 +484,12 @@ def _select_price(series: Mapping[date, float], target: date, staleness: int) ->
     return observed, float(series[observed])
 
 
-def portfolio_rows(config: PortfolioConfig, eur_prices: Mapping[str, Mapping[date, float]]) -> tuple[PortfolioRow, ...]:
+def portfolio_rows(
+    config: PortfolioConfig,
+    eur_prices: Mapping[str, Mapping[date, float]],
+    *,
+    as_of: date | None = None,
+) -> tuple[PortfolioRow, ...]:
     names = tuple(component.component_id for component in config.components)
     if not isinstance(eur_prices, Mapping) or set(eur_prices) != set(names):
         raise ValueError("portfolio price identifiers are missing or unexpected")
@@ -416,6 +514,8 @@ def portfolio_rows(config: PortfolioConfig, eur_prices: Mapping[str, Mapping[dat
         validated[name] = values
     start = _month_end(min(min(series) for series in validated.values()))
     end = _month_end(max(max(series) for series in validated.values()))
+    if as_of is not None:
+        end = min(end, date(as_of.year, as_of.month, 1) - timedelta(days=1))
     common: dict[date, tuple[float, ...]] = {}
     current = start
     while current <= end:
@@ -500,7 +600,11 @@ def write_portfolio_report(path: Path, output: Path) -> Path:
 
     config = load_portfolio_config(path)
     raw, vintage_manifest, vintage_manifest_bytes = _load_current(config)
-    rows = portfolio_rows(config, {component.component_id: raw[component.ticker] for component in config.components})
+    rows = portfolio_rows(
+        config,
+        {component.component_id: raw[component.ticker] for component in config.components},
+        as_of=datetime.fromisoformat(vintage_manifest["retrieved_at"]).date(),
+    )
     names = tuple(component.component_id for component in config.components)
     monthly = _csv_bytes(
         ("month", *names, "portfolio_return", "cumulative_value", "drawdown", "trailing_volatility_12m"),
@@ -582,5 +686,143 @@ def write_portfolio_report(path: Path, output: Path) -> Path:
         destination.parent / ".staging",
         files,
         "portfolio-report",
+        precommit=lambda: _require_config_unchanged(config),
+    )[0]
+
+
+def _correlation(left: list[float], right: list[float]) -> float | None:
+    if len(left) < 2 or statistics.stdev(left) == 0 or statistics.stdev(right) == 0:
+        return None
+    value = float(np.corrcoef(left, right)[0, 1])
+    return value if math.isfinite(value) else None
+
+
+def write_etf_study_report(path: Path, study_id: str, output: Path) -> Path:
+    from perpetual_engine.chronos import _atomic_snapshot
+
+    config = load_portfolio_config(path)
+    study = next((item for item in config.studies if item.study_id == study_id), None)
+    if study is None:
+        raise ValueError(f"portfolio study {study_id!r} is not configured")
+    raw, vintage_manifest, vintage_manifest_bytes = _load_current(config)
+    as_of = datetime.fromisoformat(vintage_manifest["retrieved_at"]).date()
+    reference = portfolio_rows(
+        config,
+        {component.component_id: raw[component.ticker] for component in config.components},
+        as_of=as_of,
+    )
+    single_config = replace(
+        config,
+        components=(ComponentSpec(study.study_id, study.ticker, study.isin, "EUR", 1.0),),
+    )
+    single = portfolio_rows(single_config, {study.study_id: raw[study.ticker]}, as_of=as_of)
+    reference_by_month = {row.month: row.portfolio_return for row in reference}
+    single_by_month = {row.month: row.portfolio_return for row in single}
+    common_months = sorted(reference_by_month.keys() & single_by_month.keys())
+    if not common_months:
+        raise ValueError("portfolio study has no common return month")
+
+    etf_returns: list[float] = []
+    portfolio_returns: list[float] = []
+    etf_value = portfolio_value = config.starting_value
+    etf_peak = portfolio_peak = config.starting_value
+    monthly_rows: list[dict[str, Any]] = []
+    etf_max_drawdown = portfolio_max_drawdown = 0.0
+    for month in common_months:
+        etf_return = single_by_month[month]
+        portfolio_return = reference_by_month[month]
+        etf_returns.append(etf_return)
+        portfolio_returns.append(portfolio_return)
+        etf_value *= 1.0 + etf_return
+        portfolio_value *= 1.0 + portfolio_return
+        etf_peak = max(etf_peak, etf_value)
+        portfolio_peak = max(portfolio_peak, portfolio_value)
+        etf_drawdown = etf_value / etf_peak - 1.0
+        portfolio_drawdown = portfolio_value / portfolio_peak - 1.0
+        etf_max_drawdown = min(etf_max_drawdown, etf_drawdown)
+        portfolio_max_drawdown = min(portfolio_max_drawdown, portfolio_drawdown)
+        rolling = _correlation(etf_returns[-12:], portfolio_returns[-12:]) if len(etf_returns) >= 12 else None
+        monthly_rows.append({
+            "month": month.isoformat(),
+            "etf_return": etf_return,
+            "portfolio_return": portfolio_return,
+            "etf_cumulative_value": etf_value,
+            "portfolio_cumulative_value": portfolio_value,
+            "cumulative_difference": etf_value - portfolio_value,
+            "rolling_correlation_12m": rolling,
+        })
+    monthly = _csv_bytes(
+        (
+            "month", "etf_return", "portfolio_return", "etf_cumulative_value",
+            "portfolio_cumulative_value", "cumulative_difference", "rolling_correlation_12m",
+        ),
+        monthly_rows,
+    )
+    count = len(common_months)
+    etf_cumulative_return = etf_value / config.starting_value - 1.0
+    portfolio_cumulative_return = portfolio_value / config.starting_value - 1.0
+    summary = _csv_bytes(
+        (
+            "study_id", "name", "ticker", "isin", "first_month", "last_month", "count",
+            "etf_cumulative_return", "portfolio_cumulative_return", "cumulative_return_difference",
+            "etf_annualized_return", "portfolio_annualized_return", "etf_annualized_volatility",
+            "portfolio_annualized_volatility", "etf_max_drawdown", "portfolio_max_drawdown", "correlation",
+        ),
+        [{
+            "study_id": study.study_id,
+            "name": study.name,
+            "ticker": study.ticker,
+            "isin": study.isin,
+            "first_month": common_months[0].isoformat(),
+            "last_month": common_months[-1].isoformat(),
+            "count": count,
+            "etf_cumulative_return": etf_cumulative_return,
+            "portfolio_cumulative_return": portfolio_cumulative_return,
+            "cumulative_return_difference": etf_cumulative_return - portfolio_cumulative_return,
+            "etf_annualized_return": (1.0 + etf_cumulative_return) ** (12.0 / count) - 1.0,
+            "portfolio_annualized_return": (1.0 + portfolio_cumulative_return) ** (12.0 / count) - 1.0,
+            "etf_annualized_volatility": statistics.stdev(etf_returns) * math.sqrt(12) if count >= 2 else None,
+            "portfolio_annualized_volatility": statistics.stdev(portfolio_returns) * math.sqrt(12) if count >= 2 else None,
+            "etf_max_drawdown": etf_max_drawdown,
+            "portfolio_max_drawdown": portfolio_max_drawdown,
+            "correlation": _correlation(etf_returns, portfolio_returns),
+        }],
+    )
+    generated = {
+        "comparison_monthly.csv": _sha256(monthly),
+        "comparison_summary.csv": _sha256(summary),
+    }
+    manifest = canonical_json({
+        "schema_version": "ETF_STUDY_REPORT_V1",
+        "study": {
+            "id": study.study_id,
+            "name": study.name,
+            "ticker": study.ticker,
+            "isin": study.isin,
+            "quote_currency": study.quote_currency,
+            "identity_source_url": study.identity_source_url,
+        },
+        "reference_portfolio_id": config.portfolio_id,
+        "config_sha256": config.config_hash,
+        "vintage": {
+            "vintage_id": vintage_manifest["vintage_id"],
+            "retrieved_at": vintage_manifest["retrieved_at"],
+            "manifest_sha256": _sha256(vintage_manifest_bytes),
+        },
+        "first_common_return_month": common_months[0].isoformat(),
+        "last_common_return_month": common_months[-1].isoformat(),
+        "SHORT_LIVE_HISTORY": count < config.short_history_returns,
+        "generated_sha256": generated,
+    })
+    destination = output.resolve()
+    return _atomic_snapshot(
+        destination,
+        destination.parent / ".staging",
+        {
+            "comparison_monthly.csv": monthly,
+            "comparison_summary.csv": summary,
+            "manifest.json": manifest,
+        },
+        "etf-study-report",
         precommit=lambda: _require_config_unchanged(config),
     )[0]

@@ -53,6 +53,10 @@ def _parser() -> argparse.ArgumentParser:
     portfolio_report = chronos_commands.add_parser("portfolio-report")
     portfolio_report.add_argument("--config", type=Path, required=True)
     portfolio_report.add_argument("--output", type=Path, required=True)
+    portfolio_study_report = chronos_commands.add_parser("portfolio-study-report")
+    portfolio_study_report.add_argument("--config", type=Path, required=True)
+    portfolio_study_report.add_argument("--study", required=True)
+    portfolio_study_report.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -127,6 +131,11 @@ def main(argv: list[str] | None = None) -> int:
             from perpetual_engine.portfolio_monitor import write_portfolio_report
 
             print(write_portfolio_report(args.config, args.output))
+            return 0
+        if args.command == "chronos" and args.chronos_command == "portfolio-study-report":
+            from perpetual_engine.portfolio_monitor import write_etf_study_report
+
+            print(write_etf_study_report(args.config, args.study, args.output))
             return 0
     except (KeyError, OSError, TypeError, ValueError) as exc:
         input_paths = [str(args.config)]

@@ -21,5 +21,15 @@
     {"id": "IWMO", "ticker": "IWMO.MI", "isin": "IE00BP3QZ825", "quote_currency": "EUR", "weight": 0.15},
     {"id": "IWQU", "ticker": "IWQU.MI", "isin": "IE00BP3QZ601", "quote_currency": "EUR", "weight": 0.15},
     {"id": "DBMFE", "ticker": "DBMFE.PA", "isin": "LU2951555403", "quote_currency": "EUR", "weight": 0.10}
+  ],
+  "studies": [
+    {
+      "id": "GRID",
+      "name": "First Trust Clean Edge Smart Grid Infrastructure UCITS ETF",
+      "ticker": "GRID.MI",
+      "isin": "IE000J80JTL1",
+      "quote_currency": "EUR",
+      "identity_source_url": "https://www.borsaitaliana.it/borsa/etf/scheda/IE000J80JTL1-ETFP.html?lang=it"
+    }
   ]
 }

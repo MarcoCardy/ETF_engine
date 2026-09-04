@@ -80,6 +80,25 @@ The public market series is always labelled a public developed-world total-retur
 
 Historical results are nominal and pre-tax. Tax behavior is covered only by the separate gross-fiscal Rule E unit tests; the backtest does not approximate investor taxes or distributions. All outputs are research evidence, not trading instructions, and no command connects to a broker or places an order.
 
+## Confrontare un ETF singolo con il portafoglio principale
+
+Gli ETF da studiare si aggiungono alla lista `studies` in `config/portfolio_p_v1.json` indicando un ID breve, nome, ticker, ISIN e una quotazione in EUR. I pesi del portafoglio principale non cambiano. Dopo l'aggiunta, l'aggiornamento prezzi acquisisce sia i quattro componenti sia gli ETF di studio:
+
+```powershell
+.venv\Scripts\python.exe -m perpetual_engine chronos portfolio-refresh --config config\portfolio_p_v1.json
+```
+
+Il confronto storico di un ETF registrato come `ID_ETF` si genera con:
+
+```powershell
+.venv\Scripts\python.exe -m perpetual_engine chronos portfolio-study-report `
+  --config config\portfolio_p_v1.json `
+  --study ID_ETF `
+  --output outputs\studies\ID_ETF
+```
+
+Il report usa soltanto mesi conclusi e realmente comuni. Riporta rendimenti e valori cumulati, differenza di performance, rendimento annualizzato, volatilità, drawdown e correlazione. Non inventa osservazioni anteriori al lancio dell'ETF.
+
 ## Required data for an executable distribution
 
 - Italian CPI base and current observations, with observation and publication dates;

@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from perpetual_engine.io import canonical_json, sha256_file
@@ -23,6 +24,14 @@ COMPONENTS = (
 )
 TARGET_MAPPING = {"WORLD": "SWDA", "MOMENTUM": "IWMO", "QUALITY": "IWQU", "TREND": "DBMFE"}
 PROXY_CAVEAT = "Chronos long historical targets are factor proxies; this report monitors exact investable ETF returns."
+STUDY = {
+    "id": "TEST",
+    "name": "Test ETF",
+    "ticker": "TEST.MI",
+    "isin": "IE00B3XXRP09",
+    "quote_currency": "EUR",
+    "identity_source_url": "https://example.test/etf",
+}
 
 
 def month_end(value: date) -> date:
@@ -68,6 +77,7 @@ def config_payload() -> dict[str, object]:
         "investable_target_mapping": TARGET_MAPPING,
         "proxy_caveat": PROXY_CAVEAT,
         "components": [{**item} for item in COMPONENTS],
+        "studies": [],
     }
 
 
@@ -100,6 +110,34 @@ class PortfolioFixture(unittest.TestCase):
 
 
 class PortfolioConfigTests(PortfolioFixture):
+    def test_accepts_unique_eur_etfs_for_single_asset_studies(self):
+        from perpetual_engine.portfolio_monitor import load_portfolio_config
+
+        payload = config_payload()
+        payload["studies"] = [{**STUDY}]
+        self.write_config(payload)
+
+        config = load_portfolio_config(self.config_path)
+
+        self.assertEqual(
+            tuple((item.study_id, item.name, item.ticker, item.isin, item.quote_currency, item.identity_source_url) for item in config.studies),
+            (("TEST", "Test ETF", "TEST.MI", "IE00B3XXRP09", "EUR", "https://example.test/etf"),),
+        )
+
+        for mutation in (
+            [{**STUDY}, {**STUDY, "isin": "IE0000000002"}],
+            [{**STUDY, "quote_currency": "USD"}],
+            [{**STUDY, "id": "../TEST"}],
+            [{**STUDY, "isin": "IE0000000001"}],
+            [{**STUDY, "identity_source_url": "http://example.test/etf"}],
+        ):
+            with self.subTest(studies=mutation):
+                invalid = config_payload()
+                invalid["studies"] = mutation
+                self.write_config(invalid)
+                with self.assertRaises(ValueError):
+                    load_portfolio_config(self.config_path)
+
     def test_strict_config_freezes_identity_weights_mapping_and_eur_rule(self):
         from perpetual_engine.portfolio_monitor import load_portfolio_config
 
@@ -143,6 +181,23 @@ class PortfolioConfigTests(PortfolioFixture):
 
 
 class PortfolioArithmeticTests(PortfolioFixture):
+    def test_excludes_month_that_has_not_finished_at_the_as_of_date(self):
+        from perpetual_engine.portfolio_monitor import load_portfolio_config, portfolio_rows
+
+        config = load_portfolio_config(self.config_path)
+        prices = {
+            name: {
+                date(2024, 12, 31): 100.0,
+                date(2025, 1, 31): 101.0,
+                date(2025, 2, 25): 102.0,
+            }
+            for name in ("SWDA", "IWMO", "IWQU", "DBMFE")
+        }
+
+        rows = portfolio_rows(config, prices, as_of=date(2025, 2, 25))
+
+        self.assertEqual([row.month for row in rows], [date(2025, 1, 31)])
+
     def test_first_common_month_weights_value_drawdown_and_exact_12m_volatility(self):
         from perpetual_engine.portfolio_monitor import load_portfolio_config, portfolio_rows
 
@@ -195,6 +250,183 @@ class PortfolioArithmeticTests(PortfolioFixture):
 
 
 class PortfolioFrozenReportTests(PortfolioFixture):
+    def test_live_download_configures_a_writable_cache_before_price_access(self):
+        from perpetual_engine.portfolio_monitor import _download_yfinance
+
+        state = {"cache": None}
+
+        class History:
+            empty = False
+
+            def __contains__(self, key: str) -> bool:
+                return key == "Adj Close"
+
+            def __getitem__(self, key: str):
+                return {datetime(2025, 1, 31): 100.0}
+
+        class Ticker:
+            def __init__(self, ticker: str):
+                self.ticker = ticker
+
+            def history(self, **kwargs):
+                if state["cache"] is None:
+                    raise RuntimeError("cache was not configured")
+                return History()
+
+            def get_history_metadata(self):
+                return {"currency": "EUR"}
+
+        module = SimpleNamespace(
+            Ticker=Ticker,
+            set_tz_cache_location=lambda path: state.__setitem__("cache", Path(path)),
+        )
+        with patch.dict("sys.modules", {"yfinance": module}):
+            payload = _download_yfinance("TEST.MI", expected_currency="EUR")
+
+        self.assertEqual(payload, b"date,adjusted_close\n2025-01-31,100\n")
+        self.assertTrue(state["cache"].is_absolute())
+        self.assertIn("perpetual-engine-yfinance", state["cache"].name)
+
+    def test_identity_rejection_leaves_no_refresh_staging_directory(self):
+        from perpetual_engine.portfolio_monitor import load_portfolio_config, refresh_portfolio_prices
+
+        payload = config_payload()
+        payload["studies"] = [{**STUDY, "id": "SWDA_STUDY", "ticker": "SWDA.MI"}]
+        self.write_config(payload)
+        config = load_portfolio_config(self.config_path)
+
+        with self.assertRaisesRegex(ValueError, "ISIN"):
+            refresh_portfolio_prices(
+                self.config_path,
+                retrieved_at=datetime(2026, 3, 2, tzinfo=timezone.utc),
+            )
+
+        staging = config.data_root / ".staging"
+        self.assertFalse(staging.exists() and any(staging.iterdir()))
+
+    def test_live_download_rejects_currency_or_isin_that_does_not_match_the_ticker(self):
+        from perpetual_engine.portfolio_monitor import _download_yfinance
+
+        class History:
+            empty = False
+
+            def __contains__(self, key: str) -> bool:
+                return key == "Adj Close"
+
+            def __getitem__(self, key: str):
+                if key != "Adj Close":
+                    raise KeyError(key)
+                return {datetime(2025, 1, 31): 100.0}
+
+        def module(currency: str, isin: str):
+            class Ticker:
+                def __init__(self, ticker: str):
+                    self.ticker = ticker
+
+                def history(self, **kwargs):
+                    return History()
+
+                def get_history_metadata(self):
+                    return {"currency": currency}
+
+                def get_isin(self):
+                    return isin
+
+            return SimpleNamespace(Ticker=Ticker, set_tz_cache_location=lambda path: None)
+
+        with patch.dict("sys.modules", {"yfinance": module("EUR", STUDY["isin"])}):
+            payload = _download_yfinance("TEST.MI", expected_currency="EUR", expected_isin=STUDY["isin"])
+        self.assertEqual(payload, b"date,adjusted_close\n2025-01-31,100\n")
+        with patch.dict("sys.modules", {"yfinance": module("EUR", "-")}):
+            payload = _download_yfinance("TEST.MI", expected_currency="EUR", expected_isin=STUDY["isin"])
+        self.assertEqual(payload, b"date,adjusted_close\n2025-01-31,100\n")
+        for currency, isin in (("USD", STUDY["isin"]), ("EUR", "IE00B4L5Y983")):
+            with self.subTest(currency=currency, isin=isin), patch.dict("sys.modules", {"yfinance": module(currency, isin)}):
+                with self.assertRaisesRegex(ValueError, "identity"):
+                    _download_yfinance("TEST.MI", expected_currency="EUR", expected_isin=STUDY["isin"])
+
+    def test_study_reports_overall_volatility_with_two_or_more_common_returns(self):
+        from perpetual_engine.portfolio_monitor import refresh_portfolio_prices, write_etf_study_report
+
+        payload = config_payload()
+        payload["studies"] = [{**STUDY}]
+        self.write_config(payload)
+        dates = months(4)
+        payloads = {
+            **self.payloads(count=4),
+            "TEST.MI": daily_bytes(list(prices_from_returns(dates, (0.04, -0.01, 0.02)).items())),
+        }
+        refresh_portfolio_prices(
+            self.config_path,
+            downloader=payloads.__getitem__,
+            retrieved_at=datetime(2025, 5, 1, tzinfo=timezone.utc),
+        )
+
+        output = self.root / "short-study"
+        write_etf_study_report(self.config_path, "TEST", output)
+
+        with (output / "comparison_summary.csv").open(newline="", encoding="utf-8") as handle:
+            summary = next(csv.DictReader(handle))
+        self.assertEqual(summary["count"], "3")
+        self.assertNotEqual(summary["etf_annualized_volatility"], "")
+        self.assertNotEqual(summary["portfolio_annualized_volatility"], "")
+
+    def test_refresh_and_compare_single_etf_with_the_reference_portfolio(self):
+        from perpetual_engine.portfolio_monitor import refresh_portfolio_prices, write_etf_study_report
+
+        payload = config_payload()
+        payload["studies"] = [{**STUDY}]
+        self.write_config(payload)
+        dates = months(14)
+        study_returns = (0.04, -0.01, 0.02, 0.01, -0.03, 0.025, 0.015, -0.01, 0.005, 0.03, -0.02, 0.01, 0.02)
+        payloads = {**self.payloads(), "TEST.MI": daily_bytes(list(prices_from_returns(dates, study_returns).items()))}
+        observed: list[str] = []
+
+        def downloader(ticker: str) -> bytes:
+            observed.append(ticker)
+            return payloads[ticker]
+
+        refresh_portfolio_prices(
+            self.config_path,
+            downloader=downloader,
+            retrieved_at=datetime(2026, 3, 2, tzinfo=timezone.utc),
+        )
+        self.assertEqual(observed, ["SWDA.MI", "IWMO.MI", "IWQU.MI", "DBMFE.PA", "TEST.MI"])
+
+        output = self.root / "outputs" / "study-test"
+        self.assertEqual(write_etf_study_report(self.config_path, "TEST", output), output.resolve())
+        with (output / "comparison_monthly.csv").open(newline="", encoding="utf-8") as handle:
+            monthly = list(csv.DictReader(handle))
+        self.assertEqual(tuple(monthly[0]), (
+            "month", "etf_return", "portfolio_return", "etf_cumulative_value",
+            "portfolio_cumulative_value", "cumulative_difference", "rolling_correlation_12m",
+        ))
+        self.assertEqual((len(monthly), monthly[0]["month"]), (13, "2025-02-28"))
+        self.assertAlmostEqual(float(monthly[0]["etf_return"]), 0.04)
+        self.assertAlmostEqual(float(monthly[0]["portfolio_return"]), 0.0105)
+        self.assertAlmostEqual(float(monthly[0]["cumulative_difference"]), 2.95)
+        self.assertEqual(monthly[10]["rolling_correlation_12m"], "")
+        self.assertNotEqual(monthly[11]["rolling_correlation_12m"], "")
+
+        with (output / "comparison_summary.csv").open(newline="", encoding="utf-8") as handle:
+            summary = next(csv.DictReader(handle))
+        self.assertEqual((summary["study_id"], summary["ticker"], summary["count"]), ("TEST", "TEST.MI", "13"))
+        self.assertNotEqual(summary["etf_annualized_volatility"], "")
+        self.assertNotEqual(summary["correlation"], "")
+        self.assertAlmostEqual(
+            float(summary["cumulative_return_difference"]),
+            float(summary["etf_cumulative_return"]) - float(summary["portfolio_cumulative_return"]),
+        )
+
+        manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["study"], STUDY)
+        self.assertEqual(manifest["reference_portfolio_id"], "P_WORLD_FACTOR_TREND")
+        self.assertEqual(manifest["first_common_return_month"], "2025-02-28")
+        for filename, digest in manifest["generated_sha256"].items():
+            self.assertEqual(sha256_file(output / filename), digest)
+        with self.assertRaisesRegex(ValueError, "study"):
+            write_etf_study_report(self.config_path, "UNKNOWN", self.root / "unknown")
+
     def test_refresh_report_eur_inputs_metrics_mapping_all_correlations_and_hashes(self):
         from perpetual_engine.portfolio_monitor import load_portfolio_config, refresh_portfolio_prices, write_portfolio_report
 
@@ -348,6 +580,7 @@ class PortfolioCliTests(unittest.TestCase):
         cases = (
             (["chronos", "portfolio-refresh", "--config", "portfolio.json"], "perpetual_engine.portfolio_monitor.refresh_portfolio_prices", (Path("portfolio.json"),), "vintage-id"),
             (["chronos", "portfolio-report", "--config", "portfolio.json", "--output", "out"], "perpetual_engine.portfolio_monitor.write_portfolio_report", (Path("portfolio.json"), Path("out")), Path("out")),
+            (["chronos", "portfolio-study-report", "--config", "portfolio.json", "--study", "TEST", "--output", "out"], "perpetual_engine.portfolio_monitor.write_etf_study_report", (Path("portfolio.json"), "TEST", Path("out")), Path("out")),
         )
         for argv, target, expected, returned in cases:
             with self.subTest(command=argv[1]), patch(target, return_value=returned) as selected, patch("sys.stdout", new=io.StringIO()) as stdout, patch("sys.stderr", new=io.StringIO()) as stderr:
