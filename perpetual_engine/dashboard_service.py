@@ -1,19 +1,32 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import math
 import os
 import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
 
 from perpetual_engine.io import canonical_json
-from perpetual_engine.portfolio_monitor import ComponentSpec, StudySpec, load_portfolio_config, valid_isin
+from perpetual_engine.portfolio_monitor import (
+    ComponentSpec,
+    HistoricalComparison,
+    StudySpec,
+    compare_single_etf,
+    load_current_portfolio_prices,
+    load_portfolio_config,
+    portfolio_rows,
+    refresh_portfolio_prices,
+    valid_isin,
+)
 
 
 _ID_RE = re.compile(r"[A-Z0-9][A-Z0-9._-]{0,31}")
@@ -49,6 +62,44 @@ class EtfCandidate:
 class DashboardState:
     components: tuple[ComponentSpec, ...]
     catalog: tuple[CatalogEtf, ...]
+
+
+@dataclass(frozen=True)
+class DashboardPaths:
+    project_root: Path
+    default_config: Path
+    state: Path
+    runtime_config: Path
+    output_root: Path
+
+    @classmethod
+    def from_root(cls, root: Path) -> "DashboardPaths":
+        root = root.resolve()
+        return cls(
+            root,
+            root / "config" / "portfolio_p_v1.json",
+            root / "data" / "dashboard_v1" / "state.json",
+            root / "data" / "dashboard_v1" / "runtime_portfolio.json",
+            root / "outputs" / "dashboard_v1" / "comparisons",
+        )
+
+
+@dataclass(frozen=True)
+class DashboardDataStatus:
+    available: bool
+    retrieved_at: datetime | None
+    first_month: date | None
+    last_month: date | None
+    vintage_id: str | None
+    pointer_path: Path
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class DashboardReport:
+    comparison_id: str
+    output_dir: Path
+    comparison: HistoricalComparison
 
 
 def search_etfs(
@@ -417,3 +468,202 @@ def materialize_runtime_config(
             except FileNotFoundError:
                 pass
     return runtime_config_path
+
+
+def _runtime_config(paths: DashboardPaths, state: DashboardState) -> Path:
+    return materialize_runtime_config(
+        paths.default_config, state, paths.runtime_config, project_root=paths.project_root,
+    )
+
+
+def _unavailable(pointer_path: Path, reason: str) -> DashboardDataStatus:
+    return DashboardDataStatus(False, None, None, None, None, pointer_path, reason)
+
+
+def current_data_status(paths: DashboardPaths, state: DashboardState) -> DashboardDataStatus:
+    runtime = _runtime_config(paths, state)
+    config = load_portfolio_config(runtime, project_root=paths.project_root)
+    pointer_path = config.data_root / "current_manifest.json"
+    if not pointer_path.exists():
+        return _unavailable(pointer_path, "Dati non disponibili. Aggiorna i dati.")
+    try:
+        _config, raw, manifest = load_current_portfolio_prices(runtime, project_root=paths.project_root)
+    except ValueError as error:
+        if str(error) == "portfolio vintage metadata does not match configuration":
+            return _unavailable(pointer_path, "Aggiorna i dati per includere il nuovo catalogo")
+        raise
+    retrieved_at = datetime.fromisoformat(manifest["retrieved_at"])
+    rows = portfolio_rows(
+        replace(config, components=state.components),
+        {component.component_id: raw[component.ticker] for component in state.components},
+        as_of=retrieved_at.date(),
+    )
+    return DashboardDataStatus(True, retrieved_at, rows[0].month, rows[-1].month, manifest["vintage_id"], pointer_path, None)
+
+
+def refresh_dashboard_data(
+    paths: DashboardPaths,
+    state: DashboardState,
+    *,
+    downloader: Callable | None = None,
+    retrieved_at: datetime | None = None,
+) -> DashboardDataStatus:
+    runtime = _runtime_config(paths, state)
+    refresh_portfolio_prices(
+        runtime,
+        project_root=paths.project_root,
+        downloader=downloader,
+        retrieved_at=retrieved_at,
+    )
+    return current_data_status(paths, state)
+
+
+def _csv_bytes(fieldnames: tuple[str, ...], rows: list[dict[str, Any]]) -> bytes:
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({
+            name: "" if row.get(name) is None else format(row[name], ".17g") if isinstance(row.get(name), float) else row[name]
+            for name in fieldnames
+        })
+    return output.getvalue().encode()
+
+
+def _study(config: Any, state: DashboardState, study_id: str) -> StudySpec:
+    component = next((item for item in config.components if item.component_id == study_id), None)
+    if component is not None:
+        return StudySpec(
+            component.component_id,
+            component.component_id,
+            component.ticker,
+            component.isin,
+            component.quote_currency,
+            f"https://finance.yahoo.com/quote/{quote(component.ticker, safe='.^=-')}",
+        )
+    catalog = next((item for item in state.catalog if item.study_id == study_id), None)
+    if catalog is None:
+        raise ValueError(f"dashboard study {study_id!r} is unknown")
+    return StudySpec(
+        catalog.study_id,
+        catalog.name,
+        catalog.ticker,
+        catalog.isin,
+        catalog.quote_currency,
+        catalog.identity_source_url,
+    )
+
+
+def _comparison_id(config_hash: str, vintage_id: str, state: DashboardState, study_id: str) -> str:
+    return hashlib.sha256(canonical_json({
+        "runtime_config_sha256": config_hash,
+        "vintage_id": vintage_id,
+        "state_sha256": state_sha256(state),
+        "study_id": study_id,
+    })).hexdigest()
+
+
+def publish_dashboard_comparison(paths: DashboardPaths, state: DashboardState, study_id: str) -> DashboardReport:
+    from perpetual_engine.chronos import _atomic_snapshot
+
+    runtime = _runtime_config(paths, state)
+    config, raw, manifest = load_current_portfolio_prices(runtime, project_root=paths.project_root)
+    target = _study(config, state, study_id)
+    retrieved_at = datetime.fromisoformat(manifest["retrieved_at"])
+    comparison = compare_single_etf(
+        config,
+        raw,
+        target,
+        reference_components=state.components,
+        as_of=retrieved_at.date(),
+    )
+    monthly = _csv_bytes(
+        (
+            "month", "etf_return", "portfolio_return", "etf_cumulative_value", "portfolio_cumulative_value",
+            "etf_drawdown", "portfolio_drawdown", "etf_trailing_volatility_12m",
+            "portfolio_trailing_volatility_12m", "rolling_correlation_12m",
+        ),
+        [{
+            "month": row.month.isoformat(),
+            "etf_return": row.etf_return,
+            "portfolio_return": row.portfolio_return,
+            "etf_cumulative_value": row.etf_cumulative_value,
+            "portfolio_cumulative_value": row.portfolio_cumulative_value,
+            "etf_drawdown": row.etf_drawdown,
+            "portfolio_drawdown": row.portfolio_drawdown,
+            "etf_trailing_volatility_12m": row.etf_trailing_volatility_12m,
+            "portfolio_trailing_volatility_12m": row.portfolio_trailing_volatility_12m,
+            "rolling_correlation_12m": row.rolling_correlation_12m,
+        } for row in comparison.rows],
+    )
+    component_ids = comparison.component_ids
+    contributions = _csv_bytes(
+        ("month", *component_ids, *(f"{item}_cumulative" for item in component_ids), "portfolio_return"),
+        [{
+            "month": row.month.isoformat(),
+            **dict(zip(component_ids, row.component_contributions)),
+            **dict(zip((f"{item}_cumulative" for item in component_ids), row.component_cumulative_contributions)),
+            "portfolio_return": row.portfolio_return,
+        } for row in comparison.rows],
+    )
+    summary = comparison.summary
+    summary_bytes = _csv_bytes(
+        (
+            "first_month", "last_month", "count", "etf_cumulative_return", "portfolio_cumulative_return",
+            "etf_annualized_return", "portfolio_annualized_return", "etf_annualized_volatility",
+            "portfolio_annualized_volatility", "etf_max_drawdown", "portfolio_max_drawdown", "correlation",
+            "etf_winning_months", "portfolio_winning_months", "tied_months", "study_id", "name", "ticker", "isin",
+            "cumulative_return_difference", "SHORT_LIVE_HISTORY",
+        ),
+        [{
+            "first_month": summary.first_month.isoformat(),
+            "last_month": summary.last_month.isoformat(),
+            "count": summary.count,
+            "etf_cumulative_return": summary.etf_cumulative_return,
+            "portfolio_cumulative_return": summary.portfolio_cumulative_return,
+            "etf_annualized_return": summary.etf_annualized_return,
+            "portfolio_annualized_return": summary.portfolio_annualized_return,
+            "etf_annualized_volatility": summary.etf_annualized_volatility,
+            "portfolio_annualized_volatility": summary.portfolio_annualized_volatility,
+            "etf_max_drawdown": summary.etf_max_drawdown,
+            "portfolio_max_drawdown": summary.portfolio_max_drawdown,
+            "correlation": summary.correlation,
+            "etf_winning_months": summary.etf_winning_months,
+            "portfolio_winning_months": summary.portfolio_winning_months,
+            "tied_months": summary.tied_months,
+            "study_id": target.study_id,
+            "name": target.name,
+            "ticker": target.ticker,
+            "isin": target.isin,
+            "cumulative_return_difference": summary.etf_cumulative_return - summary.portfolio_cumulative_return,
+            "SHORT_LIVE_HISTORY": summary.count < config.short_history_returns,
+        }],
+    )
+    comparison_id = _comparison_id(config.config_hash, manifest["vintage_id"], state, target.study_id)
+    generated = {
+        "comparison_monthly.csv": hashlib.sha256(monthly).hexdigest(),
+        "comparison_summary.csv": hashlib.sha256(summary_bytes).hexdigest(),
+        "component_contributions.csv": hashlib.sha256(contributions).hexdigest(),
+    }
+    manifest_bytes = canonical_json({
+        "schema_version": "DASHBOARD_COMPARISON_V1",
+        "comparison_id": comparison_id,
+        "runtime_config_sha256": config.config_hash,
+        "state_sha256": state_sha256(state),
+        "study_id": target.study_id,
+        "vintage": {"vintage_id": manifest["vintage_id"], "retrieved_at": manifest["retrieved_at"]},
+        "generated_sha256": generated,
+    })
+    output_dir = paths.output_root / comparison_id
+    _atomic_snapshot(
+        output_dir,
+        paths.output_root / ".staging",
+        {
+            "comparison_monthly.csv": monthly,
+            "comparison_summary.csv": summary_bytes,
+            "component_contributions.csv": contributions,
+            "manifest.json": manifest_bytes,
+        },
+        "dashboard-comparison",
+    )
+    return DashboardReport(comparison_id, output_dir.resolve(), comparison)

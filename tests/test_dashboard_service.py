@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import csv
 import tempfile
 import unittest
 from dataclasses import replace
@@ -9,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
-from perpetual_engine.io import canonical_json
+from perpetual_engine.io import canonical_json, sha256_file
 from tests.test_portfolio_monitor import STUDY, config_payload, daily_bytes, months, prices_from_returns
 
 
@@ -311,3 +312,88 @@ class DiscoveryAndCatalogTests(DashboardServiceFixture):
         with self.assertRaisesRegex(ValueError, "held"):
             remove_catalog_entry(held, "SWDA")
         self.assertEqual(held.catalog, (held_catalog,))
+
+
+class DashboardOrchestrationTests(DashboardServiceFixture):
+    def test_failed_refresh_preserves_the_current_vintage(self):
+        from perpetual_engine.dashboard_service import DashboardPaths, load_dashboard_state, refresh_dashboard_data
+
+        paths = DashboardPaths.from_root(self.root)
+        state = load_dashboard_state(self.default_config, self.state_path)
+        first = refresh_dashboard_data(
+            paths, state, downloader=self.price_payloads().__getitem__, retrieved_at=self.retrieved_at,
+        )
+        pointer = first.pointer_path.read_bytes()
+
+        with self.assertRaisesRegex(ValueError, "SWDA.MI"):
+            refresh_dashboard_data(paths, state, downloader=lambda ticker: (_ for _ in ()).throw(ValueError(ticker)))
+
+        self.assertEqual(first.pointer_path.read_bytes(), pointer)
+
+    def test_publication_is_immutable_and_reconciles_contributions(self):
+        from perpetual_engine.dashboard_service import (
+            DashboardPaths,
+            load_dashboard_state,
+            publish_dashboard_comparison,
+            refresh_dashboard_data,
+        )
+
+        paths = DashboardPaths.from_root(self.root)
+        original = load_dashboard_state(self.default_config, self.state_path)
+        state = replace(
+            original,
+            components=(
+                replace(original.components[0], weight=0.50),
+                replace(original.components[1], weight=0.20),
+                replace(original.components[2], weight=0.20),
+                replace(original.components[3], weight=0.10),
+            ),
+        )
+        refresh_dashboard_data(paths, state, downloader=self.price_payloads().__getitem__, retrieved_at=self.retrieved_at)
+
+        report = publish_dashboard_comparison(paths, state, "TEST")
+        self.assertEqual(report.output_dir.name, report.comparison_id)
+        for name in ("comparison_monthly.csv", "comparison_summary.csv", "component_contributions.csv"):
+            self.assertTrue((report.output_dir / name).is_file())
+        first_files = {path.name: path.read_bytes() for path in report.output_dir.iterdir()}
+        self.assertEqual(publish_dashboard_comparison(paths, state, "TEST").comparison_id, report.comparison_id)
+        self.assertEqual({path.name: path.read_bytes() for path in report.output_dir.iterdir()}, first_files)
+
+        with (report.output_dir / "component_contributions.csv").open(newline="", encoding="utf-8") as handle:
+            contributions = list(csv.DictReader(handle))
+        with (report.output_dir / "comparison_monthly.csv").open(newline="", encoding="utf-8") as handle:
+            monthly_by_month = {row["month"]: row for row in csv.DictReader(handle)}
+        component_ids = tuple(item.component_id for item in state.components)
+        for row in contributions:
+            self.assertAlmostEqual(sum(float(row[item]) for item in component_ids), float(row["portfolio_return"]))
+            self.assertAlmostEqual(
+                sum(float(row[f"{item}_cumulative"]) for item in component_ids),
+                float(monthly_by_month[row["month"]]["portfolio_cumulative_value"]) / 100.0 - 1.0,
+            )
+        manifest = json.loads((report.output_dir / "manifest.json").read_text(encoding="utf-8"))
+        for name, digest in manifest["generated_sha256"].items():
+            self.assertEqual(sha256_file(report.output_dir / name), digest)
+
+        changed = replace(state, components=(replace(state.components[0], weight=0.49), replace(state.components[1], weight=0.21), *state.components[2:]))
+        self.assertNotEqual(publish_dashboard_comparison(paths, changed, "TEST").comparison_id, report.comparison_id)
+
+    def test_status_reports_missing_current_data_and_stale_catalog(self):
+        from perpetual_engine.dashboard_service import (
+            DashboardPaths,
+            current_data_status,
+            load_dashboard_state,
+            refresh_dashboard_data,
+        )
+
+        paths = DashboardPaths.from_root(self.root)
+        state = load_dashboard_state(self.default_config, self.state_path)
+        self.assertFalse(current_data_status(paths, state).available)
+        refresh_dashboard_data(paths, state, downloader=self.price_payloads().__getitem__, retrieved_at=self.retrieved_at)
+        status = current_data_status(paths, state)
+        self.assertTrue(status.available)
+        self.assertEqual((status.retrieved_at, status.first_month, status.last_month), (
+            self.retrieved_at, months(14)[1], months(14)[-1],
+        ))
+
+        stale = replace(state, catalog=(replace(state.catalog[0], name="Renamed ETF"),))
+        self.assertEqual(current_data_status(paths, stale).reason, "Aggiorna i dati per includere il nuovo catalogo")
