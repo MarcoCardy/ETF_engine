@@ -102,9 +102,10 @@ def search_etfs(
         name = raw_quote.get("longname") or raw_quote.get("shortname")
         if not isinstance(name, str) or not name.strip() or len(name) > 100:
             continue
-        exchange = metadata.get("exchangeName", "")
-        if not isinstance(exchange, str):
-            exchange = ""
+        exchange = metadata.get("exchangeName")
+        if not isinstance(exchange, str) or not exchange.strip():
+            continue
+        exchange = exchange.strip()
         seen_isins.add(isin)
         found.append(
             EtfCandidate(
@@ -121,8 +122,9 @@ def add_catalog_entry(state: DashboardState, candidate: EtfCandidate) -> Dashboa
     if not isinstance(state, DashboardState) or not isinstance(candidate, EtfCandidate):
         raise ValueError("dashboard catalog identity is invalid")
     study_id = re.sub(r"[^A-Za-z0-9]", "_", candidate.ticker)
+    exchange = candidate.exchange.strip() if isinstance(candidate.exchange, str) else candidate.exchange
     catalog = CatalogEtf(
-        study_id, candidate.name, candidate.ticker, candidate.isin, candidate.exchange,
+        study_id, candidate.name, candidate.ticker, candidate.isin, exchange,
         candidate.quote_currency, candidate.identity_source_url,
     )
     _validate_catalog_entry(catalog)
@@ -217,6 +219,7 @@ def _validate_catalog_entry(item: Any) -> None:
         or not isinstance(item.isin, str)
         or not valid_isin(item.isin)
         or not isinstance(item.exchange, str)
+        or not item.exchange.strip()
         or item.quote_currency != "EUR"
         or not isinstance(item.identity_source_url, str)
         or not item.identity_source_url.startswith("https://")

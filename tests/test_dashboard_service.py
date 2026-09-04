@@ -224,12 +224,12 @@ class DiscoveryAndCatalogTests(DashboardServiceFixture):
     def test_search_rejects_unverified_queries(self):
         from perpetual_engine.dashboard_service import search_etfs
 
-        def run(query, *, currency="EUR", isin="IE000J80JTL1"):
+        def run(query, *, currency="EUR", isin="IE000J80JTL1", exchange="Milan"):
             quotes = [{"symbol": "GRID.MI", "quoteType": "ETF", "longname": "Grid ETF"}]
 
             class FakeTicker:
                 def get_history_metadata(self):
-                    return {"currency": currency, "exchangeName": "Milan"}
+                    return {"currency": currency, "exchangeName": exchange}
 
                 def get_isin(self):
                     return isin
@@ -252,6 +252,12 @@ class DiscoveryAndCatalogTests(DashboardServiceFixture):
             with self.subTest(case=case):
                 with self.assertRaisesRegex(ValueError, "verified|ISIN"):
                     run(case[0], currency=case[1], isin=case[2])
+        for exchange in (None, "", "   ", 17):
+            with self.subTest(exchange=exchange):
+                with self.assertRaisesRegex(ValueError, "exchange|verified"):
+                    run("GRID.MI", exchange=exchange)
+
+        self.assertEqual(run("GRID.MI", exchange="  Milan  ")[0].exchange, "Milan")
 
     def test_catalog_mutations_are_immutable_and_persist_exchange(self):
         from perpetual_engine.dashboard_service import (
