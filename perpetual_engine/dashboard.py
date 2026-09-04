@@ -37,6 +37,10 @@ def _show_error(error: Exception) -> None:
         st.code(repr(error))
 
 
+def _invalidate_comparison_cache() -> None:
+    st.session_state.pop("comparison_cache", None)
+
+
 def _holding_rows(state: DashboardState) -> list[dict[str, object]]:
     catalog = {item.study_id: item for item in state.catalog}
     return [
@@ -77,7 +81,7 @@ def _refresh(paths: DashboardPaths, state: DashboardState) -> None:
     finally:
         st.session_state["refreshing"] = False
     if succeeded:
-        st.session_state.pop("comparison_cache", None)
+        _invalidate_comparison_cache()
         st.rerun()
 
 
@@ -128,6 +132,7 @@ def _render_portfolio(paths: DashboardPaths, state: DashboardState) -> None:
         try:
             updated = _candidate_state(state, st.session_state.portfolio_draft)
             save_dashboard_state(paths.state, updated, default_config_path=paths.default_config)
+            _invalidate_comparison_cache()
             st.session_state.portfolio_draft = _holding_rows(updated)
             st.success("Portafoglio salvato.")
         except Exception as error:
@@ -137,6 +142,7 @@ def _render_portfolio(paths: DashboardPaths, state: DashboardState) -> None:
     if st.session_state.get("confirm_reset") and st.button("Conferma ripristino", key="confirm_reset", disabled=disabled):
         try:
             restored = reset_dashboard_state(paths.default_config, paths.state)
+            _invalidate_comparison_cache()
             st.session_state.portfolio_draft = _holding_rows(restored)
             st.session_state.confirm_reset = False
             st.rerun()
@@ -168,6 +174,7 @@ def _render_etf(paths: DashboardPaths, state: DashboardState) -> None:
         try:
             updated = add_catalog_entry(state, selected)
             save_dashboard_state(paths.state, updated, default_config_path=paths.default_config)
+            _invalidate_comparison_cache()
             st.session_state.etf_candidates = ()
             st.success("ETF aggiunto al catalogo.")
             st.rerun()
@@ -178,6 +185,7 @@ def _render_etf(paths: DashboardPaths, state: DashboardState) -> None:
         try:
             updated = remove_catalog_entry(state, remove_id)
             save_dashboard_state(paths.state, updated, default_config_path=paths.default_config)
+            _invalidate_comparison_cache()
             st.success("ETF rimosso dal catalogo.")
             st.rerun()
         except Exception as error:
@@ -276,6 +284,7 @@ def main(paths: DashboardPaths | None = None) -> None:
         if st.button("Ripristina portafoglio predefinito", key="recover_state"):
             try:
                 reset_dashboard_state(paths.default_config, paths.state)
+                _invalidate_comparison_cache()
                 st.rerun()
             except Exception as reset_error:
                 _show_error(reset_error)

@@ -204,3 +204,56 @@ class DashboardAppTests(unittest.TestCase):
             dashboard._render_portfolio(paths, state)
 
         self.assertIs(data_editor.call_args.kwargs["disabled"], True)
+
+    def test_successful_portfolio_save_clears_comparison_cache_but_failed_save_keeps_it(self) -> None:
+        from perpetual_engine import dashboard
+        from perpetual_engine.dashboard_service import DashboardPaths, load_dashboard_state
+
+        paths = DashboardPaths.from_root(self.root)
+        state = load_dashboard_state(paths.default_config, paths.state)
+
+        class SessionState(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
+        def render(save: Mock, cache: dict[str, str]) -> None:
+            fake = SimpleNamespace(
+                session_state=SessionState(portfolio_draft=dashboard._holding_rows(state), comparison_cache=cache),
+                header=Mock(), data_editor=Mock(return_value=dashboard.pd.DataFrame(dashboard._holding_rows(state))),
+                selectbox=Mock(side_effect=["", ""]),
+                button=Mock(side_effect=lambda _label, **kwargs: kwargs["key"] == "save_portfolio"),
+                rerun=Mock(), success=Mock(), error=Mock(), expander=lambda *args, **kwargs: nullcontext(), code=Mock(),
+                column_config=SimpleNamespace(NumberColumn=Mock()),
+            )
+            with patch.object(dashboard, "st", fake), patch.object(dashboard, "save_dashboard_state", save):
+                dashboard._render_portfolio(paths, state)
+            return fake.session_state
+
+        self.assertNotIn("comparison_cache", render(Mock(), {"output": "old"}))
+        preserved = {"output": "old"}
+        self.assertEqual(render(Mock(side_effect=ValueError("invalid")), preserved)["comparison_cache"], preserved)
+
+    def test_successful_catalog_confirmation_clears_comparison_cache(self) -> None:
+        from perpetual_engine import dashboard
+        from perpetual_engine.dashboard_service import DashboardPaths, EtfCandidate, load_dashboard_state
+
+        paths = DashboardPaths.from_root(self.root)
+        state = load_dashboard_state(paths.default_config, paths.state)
+        candidate = EtfCandidate("Test ETF", "TEST.MI", "IE00B3XXRP09", "Milan", "EUR", "https://example.test/etf")
+
+        class SessionState(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
+        cache = {"output": "old"}
+        fake = SimpleNamespace(
+            session_state=SessionState(etf_candidates=(candidate,), comparison_cache=cache),
+            header=Mock(), dataframe=Mock(), form=lambda *args, **kwargs: nullcontext(), text_input=Mock(),
+            form_submit_button=Mock(return_value=False), selectbox=Mock(side_effect=[candidate, ""]),
+            button=Mock(side_effect=lambda _label, **kwargs: kwargs["key"] == "confirm_etf"),
+            rerun=Mock(), success=Mock(), error=Mock(), expander=lambda *args, **kwargs: nullcontext(), code=Mock(),
+        )
+        with patch.object(dashboard, "st", fake), patch.object(dashboard, "save_dashboard_state"):
+            dashboard._render_etf(paths, state)
+
+        self.assertNotIn("comparison_cache", fake.session_state)
