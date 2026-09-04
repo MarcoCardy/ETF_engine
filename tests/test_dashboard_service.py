@@ -7,6 +7,7 @@ import unittest
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from perpetual_engine.io import canonical_json
 from tests.test_portfolio_monitor import STUDY, config_payload, daily_bytes, months, prices_from_returns
@@ -191,3 +192,116 @@ class RuntimeConfigTests(DashboardServiceFixture):
 
         state = load_dashboard_state(self.default_config, self.state_path)
         self.assertEqual(state.catalog[0].exchange, "Borsa Italiana")
+
+
+class DiscoveryAndCatalogTests(DashboardServiceFixture):
+    def test_search_accepts_symbol_or_isin_and_keeps_only_verified_eur_etfs(self):
+        from perpetual_engine.dashboard_service import search_etfs
+
+        quotes = [
+            {"symbol": "GRID.MI", "quoteType": "ETF", "longname": "First Trust Smart Grid", "exchange": "MIL"},
+            {"symbol": "NOTETF.MI", "quoteType": "EQUITY", "longname": "Not an ETF", "exchange": "MIL"},
+        ]
+
+        class FakeTicker:
+            def get_history_metadata(self):
+                return {"currency": "EUR", "exchangeName": "Milan"}
+
+            def get_isin(self):
+                return "IE000J80JTL1"
+
+        for query in ("GRID.MI", "IE000J80JTL1"):
+            with self.subTest(query=query):
+                found = search_etfs(
+                    query,
+                    search_factory=lambda value, **kwargs: SimpleNamespace(quotes=quotes),
+                    ticker_factory=lambda symbol: FakeTicker(),
+                )
+                self.assertEqual(tuple(item.ticker for item in found), ("GRID.MI",))
+                self.assertEqual(found[0].isin, "IE000J80JTL1")
+                self.assertEqual(found[0].quote_currency, "EUR")
+
+    def test_search_rejects_unverified_queries(self):
+        from perpetual_engine.dashboard_service import search_etfs
+
+        def run(query, *, currency="EUR", isin="IE000J80JTL1"):
+            quotes = [{"symbol": "GRID.MI", "quoteType": "ETF", "longname": "Grid ETF"}]
+
+            class FakeTicker:
+                def get_history_metadata(self):
+                    return {"currency": currency, "exchangeName": "Milan"}
+
+                def get_isin(self):
+                    return isin
+
+            return search_etfs(
+                query,
+                search_factory=lambda value, **kwargs: SimpleNamespace(quotes=quotes),
+                ticker_factory=lambda symbol: FakeTicker(),
+            )
+
+        with self.assertRaisesRegex(ValueError, "query"):
+            run(" ")
+        for case in (
+            ("GRID.MI", "USD", "IE000J80JTL1"),
+            ("GRID.MI", "EUR", None),
+            ("GRID.MI", "EUR", "-"),
+            ("GRID.MI", "EUR", "IE000J80JTL2"),
+            ("IE000J80JTL2", "EUR", "IE000J80JTL1"),
+        ):
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(ValueError, "verified|ISIN"):
+                    run(case[0], currency=case[1], isin=case[2])
+
+    def test_catalog_mutations_are_immutable_and_persist_exchange(self):
+        from perpetual_engine.dashboard_service import (
+            EtfCandidate,
+            add_catalog_entry,
+            load_dashboard_state,
+            remove_catalog_entry,
+            save_dashboard_state,
+        )
+
+        original = load_dashboard_state(self.default_config, self.state_path)
+        candidate = EtfCandidate(
+            "Grid ETF", "GRID.MI", "IE000J80JTL1", "Milan", "EUR",
+            "https://finance.yahoo.com/quote/GRID.MI",
+        )
+        changed = add_catalog_entry(original, candidate)
+
+        self.assertEqual(original.catalog, load_dashboard_state(self.default_config, self.state_path).catalog)
+        self.assertEqual(changed.catalog[-1].study_id, "GRID_MI")
+        self.assertEqual(changed.catalog[-1].exchange, "Milan")
+        self.assertEqual(remove_catalog_entry(changed, "GRID_MI").catalog, original.catalog)
+        self.assertEqual(changed.catalog[-1].ticker, "GRID.MI")
+        save_dashboard_state(self.state_path, changed, default_config_path=self.default_config)
+        self.assertEqual(load_dashboard_state(self.default_config, self.state_path).catalog[-1].exchange, "Milan")
+
+    def test_catalog_mutations_reject_duplicate_identity_and_held_removal(self):
+        from perpetual_engine.dashboard_service import (
+            EtfCandidate,
+            add_catalog_entry,
+            load_dashboard_state,
+            remove_catalog_entry,
+        )
+
+        original = load_dashboard_state(self.default_config, self.state_path)
+        candidate = EtfCandidate(
+            "Grid ETF", "GRID.MI", "IE000J80JTL1", "Milan", "EUR",
+            "https://finance.yahoo.com/quote/GRID.MI",
+        )
+        added = add_catalog_entry(original, candidate)
+        for duplicate in (
+            replace(candidate, ticker="TEST.MI", isin="IE000J80JTM9"),
+            replace(candidate, ticker="OTHER.MI", isin="IE00B3XXRP09"),
+        ):
+            with self.subTest(duplicate=duplicate):
+                with self.assertRaisesRegex(ValueError, "duplicated"):
+                    add_catalog_entry(added, duplicate)
+                self.assertEqual(added, add_catalog_entry(original, candidate))
+
+        held_catalog = replace(original.catalog[0], study_id="SWDA", ticker="SWDA.MI", isin="IE00B4L5Y983")
+        held = replace(original, catalog=(held_catalog,))
+        with self.assertRaisesRegex(ValueError, "held"):
+            remove_catalog_entry(held, "SWDA")
+        self.assertEqual(held.catalog, (held_catalog,))

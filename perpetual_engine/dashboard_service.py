@@ -9,7 +9,8 @@ import tempfile
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
+from urllib.parse import quote
 
 from perpetual_engine.io import canonical_json
 from perpetual_engine.portfolio_monitor import ComponentSpec, StudySpec, load_portfolio_config, valid_isin
@@ -20,6 +21,7 @@ _TICKER_RE = re.compile(r"[A-Z0-9][A-Z0-9.=^-]{0,31}")
 _STATE_SCHEMA = "ETF_DASHBOARD_STATE_V1"
 _COMPONENT_KEYS = {"id", "ticker", "isin", "quote_currency", "weight"}
 _CATALOG_KEYS = {"id", "name", "ticker", "isin", "exchange", "quote_currency", "identity_source_url"}
+_ISIN_SHAPE_RE = re.compile(r"[A-Z]{2}[A-Z0-9]{10}")
 
 
 @dataclass(frozen=True)
@@ -34,9 +36,115 @@ class CatalogEtf:
 
 
 @dataclass(frozen=True)
+class EtfCandidate:
+    name: str
+    ticker: str
+    isin: str
+    exchange: str
+    quote_currency: str
+    identity_source_url: str
+
+
+@dataclass(frozen=True)
 class DashboardState:
     components: tuple[ComponentSpec, ...]
     catalog: tuple[CatalogEtf, ...]
+
+
+def search_etfs(
+    query: str,
+    *,
+    search_factory: Callable[..., Any] | None = None,
+    ticker_factory: Callable[[str], Any] | None = None,
+) -> tuple[EtfCandidate, ...]:
+    query = query.strip() if isinstance(query, str) else ""
+    if not query:
+        raise ValueError("ETF query is required")
+    if search_factory is None or ticker_factory is None:
+        import yfinance as yf
+
+        search_factory = search_factory or yf.Search
+        ticker_factory = ticker_factory or yf.Ticker
+    try:
+        quotes = getattr(
+            search_factory(query, max_results=8, news_count=0, lists_count=0, include_cb=False),
+            "quotes",
+            (),
+        )
+    except Exception as error:
+        raise ValueError("ETF search failed") from error
+    if not isinstance(quotes, (list, tuple)):
+        raise ValueError("ETF search returned no verified results")
+
+    isin_query = _ISIN_SHAPE_RE.fullmatch(query) is not None
+    seen_tickers: set[str] = set()
+    seen_isins: set[str] = set()
+    found: list[EtfCandidate] = []
+    for raw_quote in quotes:
+        if not isinstance(raw_quote, dict) or raw_quote.get("quoteType") != "ETF":
+            continue
+        ticker = raw_quote.get("symbol")
+        if not isinstance(ticker, str) or _TICKER_RE.fullmatch(ticker) is None or ticker in seen_tickers:
+            continue
+        seen_tickers.add(ticker)
+        try:
+            instrument = ticker_factory(ticker)
+            metadata = instrument.get_history_metadata()
+            isin = instrument.get_isin()
+        except Exception:
+            continue
+        if not isinstance(metadata, dict) or metadata.get("currency") != "EUR" or not valid_isin(isin):
+            continue
+        if isin_query and isin != query:
+            continue
+        if isin in seen_isins:
+            continue
+        name = raw_quote.get("longname") or raw_quote.get("shortname")
+        if not isinstance(name, str) or not name.strip() or len(name) > 100:
+            continue
+        exchange = metadata.get("exchangeName", "")
+        if not isinstance(exchange, str):
+            exchange = ""
+        seen_isins.add(isin)
+        found.append(
+            EtfCandidate(
+                name.strip(), ticker, isin, exchange, "EUR",
+                f"https://finance.yahoo.com/quote/{quote(ticker, safe='.^=-')}",
+            )
+        )
+    if not found:
+        raise ValueError("no verified EUR ETF matches query")
+    return tuple(sorted(found, key=lambda item: item.ticker))
+
+
+def add_catalog_entry(state: DashboardState, candidate: EtfCandidate) -> DashboardState:
+    if not isinstance(state, DashboardState) or not isinstance(candidate, EtfCandidate):
+        raise ValueError("dashboard catalog identity is invalid")
+    study_id = re.sub(r"[^A-Za-z0-9]", "_", candidate.ticker)
+    catalog = CatalogEtf(
+        study_id, candidate.name, candidate.ticker, candidate.isin, candidate.exchange,
+        candidate.quote_currency, candidate.identity_source_url,
+    )
+    _validate_catalog_entry(catalog)
+    if (
+        any(item.study_id == study_id for item in state.catalog)
+        or any(item.component_id == study_id for item in state.components)
+        or any(item.ticker == candidate.ticker or item.isin == candidate.isin for item in state.catalog)
+        or any(item.ticker == candidate.ticker or item.isin == candidate.isin for item in state.components)
+    ):
+        raise ValueError("dashboard catalog identity is duplicated")
+    return DashboardState(state.components, (*state.catalog, catalog))
+
+
+def remove_catalog_entry(state: DashboardState, study_id: str) -> DashboardState:
+    if not isinstance(state, DashboardState) or not isinstance(study_id, str):
+        raise ValueError("dashboard catalog identity is unknown")
+    match = next((item for item in state.catalog if item.study_id == study_id), None)
+    if match is None:
+        raise ValueError("dashboard catalog identity is unknown")
+    if any(item.ticker == match.ticker or item.isin == match.isin for item in state.components):
+        raise ValueError("dashboard catalog ETF is held")
+    return DashboardState(state.components, tuple(item for item in state.catalog if item.study_id != study_id))
 
 
 def _exchange_for_ticker(ticker: str) -> str:
