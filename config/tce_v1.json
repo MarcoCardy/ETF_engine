@@ -1,0 +1,57 @@
+{
+  "schema_version": "TCE_CONFIG_V1",
+  "version": "1.0",
+  "status": "FROZEN",
+  "weights": {
+    "policy": "0.15",
+    "capex_orders": "0.15",
+    "earnings_revisions": "0.20",
+    "relative_strength": "0.15",
+    "valuation": "0.15",
+    "crowding": "0.10",
+    "macro": "0.05",
+    "portfolio_fit": "0.05"
+  },
+  "thresholds": {
+    "candidate_tce": "70",
+    "minimum_confidence": "60",
+    "narrative_veto_earnings_below": "40",
+    "narrative_veto_momentum_below": "40",
+    "narrative_veto_cap": "64",
+    "bubble_veto_valuation_below": "30",
+    "bubble_veto_crowding_below": "30",
+    "bubble_veto_cap": "69",
+    "monthly_confirmations": 2,
+    "thematic_exit_below": "55",
+    "thematic_exit_confirmations": 2,
+    "intramonth_hurdle_points": "5",
+    "incumbent_floor": "65",
+    "cooldown_days": 30
+  },
+  "timing": {
+    "intramonth_full_sessions_before_execution": 1,
+    "historical_warmup_from": "2011-08-31",
+    "historical_test_from": "2016-08-31",
+    "historical_final_limit": "2026-07-31",
+    "historical_label": "RETROSPECTIVE_RESEARCH",
+    "prospective_shadow_not_before": "2026-08-27"
+  },
+  "variants": ["FIXED_UNIVERSE", "THEMATIC"],
+  "portfolio_integration": {
+    "mode": "SEPARATE_OPTIONAL_SUPPLEMENT",
+    "structural_portfolio_weight": "1.00",
+    "maximum_optional_tce_notional": "0.10",
+    "automatic_funding_from_structural": false,
+    "activation": "USER_DISCRETION"
+  },
+  "event_whitelist": [
+    "LAW_OR_BUDGET_ENACTED",
+    "CONTRACT_OR_ORDER_AWARDED",
+    "GUIDANCE_OR_EARNINGS_REVISION",
+    "REGULATORY_APPROVAL_OR_CANCELLATION",
+    "PROGRAM_CANCELLATION",
+    "CREDIT_OR_DEFAULT_EVENT"
+  ],
+  "missing_data_policy": "DATA_INCOMPLETE_NO_RENORMALIZATION",
+  "no_eligible_candidate": "CASH"
+}

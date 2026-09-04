@@ -1,0 +1,523 @@
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-base/perpetual_engine/chronos_data.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-head/perpetual_engine/chronos_data.py"
+index 4da8a28..cc185f2 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-base/perpetual_engine/chronos_data.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-head/perpetual_engine/chronos_data.py"
+@@ -5,17 +5,19 @@ import hashlib
+ import io
+ import json
+ import math
++import shutil
++import tempfile
+ import zipfile
+ from dataclasses import dataclass, replace
+ from datetime import date, datetime, timedelta, timezone
+ from decimal import Decimal, InvalidOperation
+ from pathlib import Path
+-from typing import Any, Iterable, Mapping
++from typing import Any, Callable, Iterable, Mapping
+ 
+ import numpy as np
+ 
+ from perpetual_engine.io import canonical_json, sha256_file
+-from perpetual_engine.data_sources import SourceArtifact, parse_fred_csv
++from perpetual_engine.data_sources import SourceArtifact, fetch_url, freeze_bytes, parse_fred_csv
+ from perpetual_engine.point_in_time import ObservationRow, validate_rows
+ 
+ 
+@@ -30,6 +32,13 @@ _REQUIRED_SOURCE_MAPPINGS = {
+     "US_CPI_YOY": ("fred_cpi", "past_only"),
+ }
+ _MODEL = ("amazon/chronos-2", "29ec3766d36d6f73f0696f85560a422f50e8498c", "cpu")
++_AVAILABILITY = {
++    "ECB_DFR": "effective_date",
++    "US_TREASURY_10Y": "treasury_next_business_day",
++    "BRENT_RETURN": "observation_plus_7_days",
++    "BIS_USD_CREDIT_YOY": "quarter_end_plus_4_months",
++    "US_CPI_YOY": "following_month_end",
++}
+ _ECB_URL = "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR.LEV?format=csvdata"
+ _ECB_KEY = "D.U2.EUR.4F.KR.DFR.LEV"
+ _BIS_URL = "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip"
+@@ -418,3 +427,242 @@ def normalize_covariates(
+         raise ValueError("normalized covariate values must be finite")
+     array.flags.writeable = False
+     return MonthlyTable(target_months, names, array)
++
++
++def _parse_source(spec: SourceSpec, artifact: SourceArtifact) -> tuple[ObservationRow, ...]:
++    if spec.parser == "ecb_dfr":
++        return parse_ecb_dfr(artifact)
++    if spec.parser == "bis_gli":
++        return parse_bis_gli(artifact)
++    series_id = {"fred_dgs10": "DGS10", "fred_brent": "DCOILBRENTEU", "fred_cpi": "CPIAUCNS"}.get(spec.parser)
++    if series_id is None:
++        raise ValueError("Chronos source parser is not registered")
++    return parse_fred_covariate(artifact, series_id)
++
++
++def _covariate_bytes(table: MonthlyTable) -> bytes:
++    output = io.StringIO(newline="")
++    writer = csv.writer(output, lineterminator="\n")
++    writer.writerow(("month", *table.names))
++    for index, month in enumerate(table.months):
++        writer.writerow((month.isoformat(), *(format(float(value), ".17g") for value in table.values[:, index])))
++    return output.getvalue().encode("utf-8")
++
++
++def _vintage_identity(config_hash: str, sources: Iterable[Mapping[str, str]], covariates_hash: str) -> dict[str, Any]:
++    return {
++        "config_hash": config_hash,
++        "sources": [
++            {"id": source["id"], "url": source["url"], "sha256": source["sha256"]}
++            for source in sources
++        ],
++        "availability": _AVAILABILITY,
++        "covariates_sha256": covariates_hash,
++    }
++
++
++def _is_sha256(value: Any) -> bool:
++    return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
++
++
++def _json_object(path: Path, name: str) -> dict[str, Any]:
++    try:
++        value = json.loads(path.read_text(encoding="utf-8"))
++    except (OSError, UnicodeError, json.JSONDecodeError) as error:
++        raise ValueError(f"{name} is malformed") from error
++    if not isinstance(value, dict):
++        raise ValueError(f"{name} is malformed")
++    return value
++
++
++def _contained_file(root: Path, relative: Any, name: str) -> Path:
++    if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
++        raise ValueError(f"{name} path is invalid")
++    path = (root / relative).resolve()
++    if not path.is_relative_to(root.resolve()) or not path.is_file():
++        raise ValueError(f"{name} path escapes its vintage or is missing")
++    return path
++
++
++def _load_vintage(config: ChronosConfig, vintage: Path, vintage_id: str) -> MonthlyTable:
++    if not _is_sha256(vintage_id):
++        raise ValueError("vintage ID is invalid")
++    vintages_root = (config.data_root / "vintages").resolve()
++    vintage = vintage.resolve()
++    if not vintage.is_relative_to(vintages_root) and vintage.parent.name != ".staging":
++        raise ValueError("vintage path escapes the configured data root")
++    manifest_path = vintage / "manifest.json"
++    manifest = _json_object(manifest_path, "vintage manifest")
++    if set(manifest) != {"schema_version", "vintage_id", "config_hash", "sources", "availability", "generated_sha256"}:
++        raise ValueError("vintage manifest schema is invalid")
++    if manifest.get("schema_version") != "CHRONOS_VINTAGE_V1":
++        raise ValueError("vintage manifest schema is invalid")
++    if manifest.get("config_hash") != config.config_hash:
++        raise ValueError("vintage config hash does not match")
++    sources = manifest.get("sources")
++    expected_sources = tuple((source.source_id, source.url, source.parser, source.role) for source in config.sources)
++    if not isinstance(sources, list) or len(sources) != len(expected_sources):
++        raise ValueError("vintage sources are invalid")
++    raw_paths: set[Path] = set()
++    for record, expected in zip(sources, expected_sources):
++        if not isinstance(record, dict) or set(record) != {"id", "url", "parser", "role", "sha256", "raw_path"}:
++            raise ValueError("vintage source record is invalid")
++        if tuple(record.get(field) for field in ("id", "url", "parser", "role")) != expected or not _is_sha256(record.get("sha256")):
++            raise ValueError("vintage source identity is invalid")
++        raw_path = _contained_file(vintage, record["raw_path"], "raw source")
++        if raw_path in raw_paths or sha256_file(raw_path) != record["sha256"]:
++            raise ValueError("raw hash does not match")
++        raw_paths.add(raw_path)
++    if manifest.get("availability") != _AVAILABILITY:
++        raise ValueError("vintage availability identity is invalid")
++    generated = manifest.get("generated_sha256")
++    if not isinstance(generated, dict) or set(generated) != {"covariates.csv"} or not _is_sha256(generated["covariates.csv"]):
++        raise ValueError("vintage generated hashes are invalid")
++    covariate_path = _contained_file(vintage, "covariates.csv", "normalized covariates")
++    if sha256_file(covariate_path) != generated["covariates.csv"]:
++        raise ValueError("normalized hash does not match")
++    identity = _vintage_identity(config.config_hash, sources, generated["covariates.csv"])
++    computed_id = hashlib.sha256(canonical_json(identity)).hexdigest()
++    if manifest.get("vintage_id") != vintage_id or computed_id != vintage_id:
++        raise ValueError("vintage ID does not match its immutable identity")
++    try:
++        with covariate_path.open("r", encoding="utf-8", newline="") as handle:
++            csv_rows = list(csv.reader(handle))
++    except (OSError, UnicodeError) as error:
++        raise ValueError("normalized covariates are unreadable") from error
++    header = ("month", *covariate_names(config))
++    if not csv_rows or tuple(csv_rows[0]) != header:
++        raise ValueError("normalized covariate header is invalid")
++    months: list[date] = []
++    values: list[list[float]] = []
++    for row in csv_rows[1:]:
++        if len(row) != len(header):
++            raise ValueError("normalized covariate row is incomplete")
++        try:
++            month = date.fromisoformat(row[0])
++            row_values = [float(value) for value in row[1:]]
++        except ValueError as error:
++            raise ValueError("normalized covariate row is malformed") from error
++        if month != _month_end(month) or (months and month != _next_month_end(months[-1])):
++            raise ValueError("normalized months must be unique, ordered, and contiguous")
++        if not all(math.isfinite(value) for value in row_values):
++            raise ValueError("normalized covariate values must be finite")
++        months.append(month)
++        values.append(row_values)
++    if not months:
++        raise ValueError("normalized covariates have no observations")
++    array = np.asarray(values, dtype=float).T
++    array.flags.writeable = False
++    return MonthlyTable(tuple(months), covariate_names(config), array)
++
++
++def _replace_current_pointer(data_root: Path, content: bytes) -> None:
++    temporary: Path | None = None
++    try:
++        with tempfile.NamedTemporaryFile(dir=data_root, prefix=".current-", suffix=".tmp", delete=False) as handle:
++            handle.write(content)
++            temporary = Path(handle.name)
++        temporary.replace(data_root / "current_manifest.json")
++    finally:
++        if temporary is not None and temporary.exists():
++            temporary.unlink()
++
++
++def refresh_chronos_data(
++    config_path: Path,
++    *,
++    fetcher: Callable[[str], bytes] = fetch_url,
++    retrieved_at: datetime | None = None,
++) -> str:
++    config = load_chronos_config(config_path)
++    targets = load_target_table(config)
++    retrieved_at = retrieved_at or datetime.now(timezone.utc)
++    if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
++        raise ValueError("retrieved_at must be timezone-aware")
++    if not config.data_root.resolve().is_relative_to(config.project_root):
++        raise ValueError("data root escapes project root")
++    config.data_root.mkdir(parents=True, exist_ok=True)
++    staging_root = config.data_root / ".staging"
++    staging_root.mkdir(exist_ok=True)
++    stage = Path(tempfile.mkdtemp(prefix="refresh-", dir=staging_root)).resolve()
++    published: Path | None = None
++    try:
++        source_rows: dict[str, tuple[ObservationRow, ...]] = {}
++        records: list[dict[str, str]] = []
++        for spec in config.sources:
++            content = fetcher(spec.url)
++            if not isinstance(content, bytes):
++                raise ValueError("source fetcher must return bytes")
++            artifact = freeze_bytes(content, spec.url, retrieved_at, stage / "raw", f"chronos-v1:{spec.parser}")
++            source_rows[spec.source_id] = _parse_source(spec, artifact)
++            records.append({
++                "id": spec.source_id,
++                "url": spec.url,
++                "parser": spec.parser,
++                "role": spec.role,
++                "sha256": artifact.source_hash,
++                "raw_path": artifact.local_path.relative_to(stage).as_posix(),
++            })
++        table = normalize_covariates(config, targets.months, source_rows)
++        normalized = _covariate_bytes(table)
++        normalized_hash = hashlib.sha256(normalized).hexdigest()
++        identity = _vintage_identity(config.config_hash, records, normalized_hash)
++        vintage_id = hashlib.sha256(canonical_json(identity)).hexdigest()
++        manifest = {
++            "schema_version": "CHRONOS_VINTAGE_V1",
++            "vintage_id": vintage_id,
++            "config_hash": config.config_hash,
++            "sources": records,
++            "availability": _AVAILABILITY,
++            "generated_sha256": {"covariates.csv": normalized_hash},
++        }
++        manifest_bytes = canonical_json(manifest)
++        (stage / "covariates.csv").write_bytes(normalized)
++        (stage / "manifest.json").write_bytes(manifest_bytes)
++        _load_vintage(config, stage, vintage_id)
++        vintages = config.data_root / "vintages"
++        vintages.mkdir(exist_ok=True)
++        destination = vintages / vintage_id
++        if destination.exists():
++            _load_vintage(config, destination, vintage_id)
++            if (destination / "manifest.json").read_bytes() != manifest_bytes:
++                raise ValueError("existing vintage is not byte-identical")
++        else:
++            stage.replace(destination)
++            published = destination
++        pointer = canonical_json({
++            "schema_version": "CHRONOS_CURRENT_V1",
++            "vintage_id": vintage_id,
++            "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
++        })
++        try:
++            _replace_current_pointer(config.data_root, pointer)
++        except OSError as error:
++            if published is not None and published.exists():
++                shutil.rmtree(published)
++            raise ValueError("current vintage pointer could not be published") from error
++        return vintage_id
++    finally:
++        if stage.exists() and stage.is_relative_to(staging_root.resolve()):
++            shutil.rmtree(stage)
++
++
++def load_covariate_table(config: ChronosConfig) -> tuple[MonthlyTable, str]:
++    data_root = config.data_root.resolve()
++    if not data_root.is_relative_to(config.project_root.resolve()):
++        raise ValueError("data root escapes project root")
++    pointer_path = data_root / "current_manifest.json"
++    pointer = _json_object(pointer_path, "current vintage pointer")
++    if set(pointer) != {"schema_version", "vintage_id", "manifest_sha256"} or pointer.get("schema_version") != "CHRONOS_CURRENT_V1":
++        raise ValueError("current vintage pointer schema is invalid")
++    vintage_id = pointer.get("vintage_id")
++    if not _is_sha256(vintage_id):
++        raise ValueError("vintage ID is invalid")
++    vintage = (data_root / "vintages" / vintage_id).resolve()
++    if not vintage.is_relative_to((data_root / "vintages").resolve()):
++        raise ValueError("vintage path escapes the configured data root")
++    manifest_path = vintage / "manifest.json"
++    expected_manifest_hash = pointer.get("manifest_sha256")
++    if not _is_sha256(expected_manifest_hash) or not manifest_path.is_file() or sha256_file(manifest_path) != expected_manifest_hash:
++        raise ValueError("vintage manifest hash does not match pointer")
++    return _load_vintage(config, vintage, vintage_id), vintage_id
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-base/tests/test_chronos.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-head/tests/test_chronos.py"
+index 2e5bf63..d314506 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-base/tests/test_chronos.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-head/tests/test_chronos.py"
+@@ -1,6 +1,8 @@
+ import hashlib
++import io
+ import json
+ import math
++import shutil
+ import tempfile
+ import unittest
+ import zipfile
+@@ -8,6 +10,7 @@ from dataclasses import replace
+ from datetime import date, datetime, timezone
+ from decimal import Decimal
+ from pathlib import Path
++from unittest.mock import patch
+ 
+ from perpetual_engine.io import canonical_json, sha256_file
+ 
+@@ -375,3 +378,218 @@ class ChronosCovariateTests(unittest.TestCase):
+         self.assertEqual(table.values.shape, (5, 2))
+         self.assertTrue(all(math.isfinite(value) for value in table.values.flat))
+         self.assertFalse(table.values.flags.writeable)
++
++
++class ChronosRefreshTests(unittest.TestCase):
++    def setUp(self):
++        self.directory = tempfile.TemporaryDirectory()
++        self.root = Path(self.directory.name)
++        self.config_path = self.root / "config" / "chronos_v1.json"
++        self.config_path.parent.mkdir(parents=True)
++        self.config_path.write_bytes(Path("config/chronos_v1.json").read_bytes())
++        self.target_csv = self.root / "outputs" / "four_sleeve_v1" / "monthly_returns.csv"
++        self.target_csv.parent.mkdir(parents=True)
++        self.target_csv.write_text(
++            "month,WORLD,MOMENTUM,QUALITY,TREND\n"
++            "2024-01-31,0.01,0.02,0.03,0.04\n"
++            "2024-02-29,0.05,0.06,0.07,0.08\n",
++            encoding="utf-8",
++        )
++        (self.target_csv.parent / "manifest.json").write_bytes(canonical_json({
++            "schema_version": "FOUR_SLEEVE_REPORT_V1",
++            "generated_sha256": {"monthly_returns.csv": sha256_file(self.target_csv)},
++        }))
++        self.at = datetime(2026, 9, 3, 12, tzinfo=timezone.utc)
++        self.payloads = self._payloads()
++
++    def tearDown(self):
++        self.directory.cleanup()
++
++    @staticmethod
++    def _fred(series_id, rows):
++        return ("observation_date," + series_id + "\n" + "\n".join(
++            f"{observed},{value}" for observed, value in rows
++        ) + "\n").encode()
++
++    @staticmethod
++    def _bis():
++        fields = ChronosCovariateTests.BIS_HEADERS
++        row = ("Q", "USD", "3P", "N", "A", "I", "B", "771", "2023-Q3", "5.6", "US dollar credit")
++        output = io.BytesIO()
++        with zipfile.ZipFile(output, "w") as archive:
++            archive.writestr("WS_GLI_csv_flat.csv", ",".join(fields) + "\n" + ",".join(row) + "\n")
++        return output.getvalue()
++
++    def _payloads(self):
++        return {
++            ChronosCovariateTests.ECB_URL: (
++                "KEY,TIME_PERIOD,OBS_VALUE\n"
++                "D.U2.EUR.4F.KR.DFR.LEV,2024-01-01,3.0\n"
++                "D.U2.EUR.4F.KR.DFR.LEV,2024-02-15,4.0\n"
++            ).encode(),
++            "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10": self._fred("DGS10", (
++                ("2024-01-02", "4.20"), ("2024-01-03", "4.30"), ("2024-02-01", "4.40"),
++            )),
++            "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU": self._fred("DCOILBRENTEU", (
++                ("2023-12-01", "100"), ("2024-01-01", "110"), ("2024-02-01", "121"),
++            )),
++            ChronosCovariateTests.BIS_URL: self._bis(),
++            "https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCNS": self._fred("CPIAUCNS", (
++                ("2022-12-01", "100"), ("2023-01-01", "100"),
++                ("2023-12-01", "110"), ("2024-01-01", "120"),
++            )),
++        }
++
++    def test_refresh_freezes_five_sources_and_reuses_identical_vintage(self):
++        from perpetual_engine.chronos_data import load_chronos_config, load_covariate_table, refresh_chronos_data
++
++        calls = []
++
++        def fetcher(url):
++            calls.append(url)
++            return self.payloads[url]
++
++        vintage_id = refresh_chronos_data(self.config_path, fetcher=fetcher, retrieved_at=self.at)
++        config = load_chronos_config(self.config_path)
++        vintage = config.data_root / "vintages" / vintage_id
++        manifest = json.loads((vintage / "manifest.json").read_text(encoding="utf-8"))
++        self.assertEqual(calls, [source.url for source in config.sources])
++        self.assertEqual(manifest["availability"], {
++            "ECB_DFR": "effective_date",
++            "US_TREASURY_10Y": "treasury_next_business_day",
++            "BRENT_RETURN": "observation_plus_7_days",
++            "BIS_USD_CREDIT_YOY": "quarter_end_plus_4_months",
++            "US_CPI_YOY": "following_month_end",
++        })
++        self.assertEqual(
++            (vintage / "covariates.csv").read_text(encoding="utf-8").splitlines()[0],
++            "month,ECB_DFR,US_TREASURY_10Y,BRENT_RETURN,BIS_USD_CREDIT_YOY,US_CPI_YOY",
++        )
++        for source in manifest["sources"]:
++            self.assertEqual(sha256_file(vintage / source["raw_path"]), source["sha256"])
++        self.assertEqual(sha256_file(vintage / "covariates.csv"), manifest["generated_sha256"]["covariates.csv"])
++        before = {str(path.relative_to(vintage)): path.read_bytes() for path in vintage.rglob("*") if path.is_file()}
++
++        calls.clear()
++        self.assertEqual(refresh_chronos_data(self.config_path, fetcher=fetcher, retrieved_at=self.at), vintage_id)
++        self.assertEqual(calls, [source.url for source in config.sources])
++        self.assertEqual(before, {str(path.relative_to(vintage)): path.read_bytes() for path in vintage.rglob("*") if path.is_file()})
++        table, loaded_id = load_covariate_table(config)
++        self.assertEqual(loaded_id, vintage_id)
++        self.assertEqual(table.names, ("ECB_DFR", "US_TREASURY_10Y", "BRENT_RETURN", "BIS_USD_CREDIT_YOY", "US_CPI_YOY"))
++        self.assertEqual(table.months, (date(2024, 1, 31), date(2024, 2, 29)))
++        self.assertEqual(table.values.shape, (5, 2))
++        self.assertFalse(table.values.flags.writeable)
++
++    def test_refresh_is_atomic_when_fifth_source_or_pointer_fails(self):
++        from perpetual_engine.chronos_data import refresh_chronos_data
++
++        first_id = refresh_chronos_data(self.config_path, fetcher=self.payloads.__getitem__, retrieved_at=self.at)
++        data_root = self.root / "data" / "chronos_v1"
++        pointer = data_root / "current_manifest.json"
++        original_pointer = pointer.read_bytes()
++        original_vintages = {path.name for path in (data_root / "vintages").iterdir()}
++        bad = dict(self.payloads)
++        bad["https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCNS"] = b"not,cpi\n"
++        with self.assertRaises(ValueError):
++            refresh_chronos_data(self.config_path, fetcher=bad.__getitem__, retrieved_at=self.at)
++        self.assertEqual(pointer.read_bytes(), original_pointer)
++        self.assertEqual({path.name for path in (data_root / "vintages").iterdir()}, original_vintages)
++        self.assertTrue((data_root / "vintages" / first_id).is_dir())
++
++        changed = dict(self.payloads)
++        changed["https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10"] = self._fred("DGS10", (
++            ("2024-01-02", "4.10"), ("2024-02-01", "4.20"),
++        ))
++        with patch("perpetual_engine.chronos_data._replace_current_pointer", side_effect=OSError("pointer failed")):
++            with self.assertRaises(ValueError):
++                refresh_chronos_data(self.config_path, fetcher=changed.__getitem__, retrieved_at=self.at)
++        self.assertEqual(pointer.read_bytes(), original_pointer)
++        self.assertEqual({path.name for path in (data_root / "vintages").iterdir()}, original_vintages)
++
++    def test_offline_load_rejects_corrupt_raw_normalized_manifest_and_path_escape(self):
++        from perpetual_engine.chronos_data import load_chronos_config, load_covariate_table, refresh_chronos_data
++
++        vintage_id = refresh_chronos_data(self.config_path, fetcher=self.payloads.__getitem__, retrieved_at=self.at)
++        config = load_chronos_config(self.config_path)
++        vintage = config.data_root / "vintages" / vintage_id
++        manifest_path = vintage / "manifest.json"
++        pointer_path = config.data_root / "current_manifest.json"
++
++        source = json.loads(manifest_path.read_text(encoding="utf-8"))["sources"][0]
++        raw_path = vintage / source["raw_path"]
++        original = raw_path.read_bytes()
++        raw_path.write_bytes(original + b"corrupt")
++        with self.assertRaisesRegex(ValueError, "raw hash"):
++            load_covariate_table(config)
++        raw_path.write_bytes(original)
++
++        csv_path = vintage / "covariates.csv"
++        original = csv_path.read_bytes()
++        csv_path.write_bytes(original + b"corrupt")
++        with self.assertRaisesRegex(ValueError, "normalized hash"):
++            load_covariate_table(config)
++        csv_path.write_bytes(original)
++
++        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
++        manifest["config_hash"] = "0" * 64
++        manifest_path.write_bytes(canonical_json(manifest))
++        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
++        pointer["manifest_sha256"] = sha256_file(manifest_path)
++        pointer_path.write_bytes(canonical_json(pointer))
++        with self.assertRaisesRegex(ValueError, "config hash"):
++            load_covariate_table(config)
++
++        pointer["vintage_id"] = "../outside"
++        pointer_path.write_bytes(canonical_json(pointer))
++        with self.assertRaisesRegex(ValueError, "vintage ID"):
++            load_covariate_table(config)
++
++    def test_offline_load_rejects_self_consistent_bad_header_and_nonfinite_value(self):
++        from perpetual_engine.chronos_data import load_chronos_config, load_covariate_table, refresh_chronos_data
++
++        original_id = refresh_chronos_data(self.config_path, fetcher=self.payloads.__getitem__, retrieved_at=self.at)
++        config = load_chronos_config(self.config_path)
++        vintages = config.data_root / "vintages"
++        availability = {
++            "ECB_DFR": "effective_date",
++            "US_TREASURY_10Y": "treasury_next_business_day",
++            "BRENT_RETURN": "observation_plus_7_days",
++            "BIS_USD_CREDIT_YOY": "quarter_end_plus_4_months",
++            "US_CPI_YOY": "following_month_end",
++        }
++        cases = (
++            ("header", lambda text: text.replace("month,ECB_DFR", "month,US_TREASURY_10Y", 1)),
++            ("finite", lambda text: text.replace("2024-01-31,3", "2024-01-31,nan", 1)),
++        )
++        for index, (message, mutate) in enumerate(cases):
++            with self.subTest(message=message):
++                candidate = vintages / f"candidate-{index}"
++                shutil.copytree(vintages / original_id, candidate)
++                csv_path = candidate / "covariates.csv"
++                csv_path.write_text(mutate(csv_path.read_text(encoding="utf-8")), encoding="utf-8", newline="")
++                manifest = json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))
++                normalized_hash = sha256_file(csv_path)
++                manifest["generated_sha256"]["covariates.csv"] = normalized_hash
++                identity = {
++                    "config_hash": config.config_hash,
++                    "sources": [
++                        {"id": source["id"], "url": source["url"], "sha256": source["sha256"]}
++                        for source in manifest["sources"]
++                    ],
++                    "availability": availability,
++                    "covariates_sha256": normalized_hash,
++                }
++                candidate_id = hashlib.sha256(canonical_json(identity)).hexdigest()
++                manifest["vintage_id"] = candidate_id
++                manifest_path = candidate / "manifest.json"
++                manifest_path.write_bytes(canonical_json(manifest))
++                destination = vintages / candidate_id
++                candidate.rename(destination)
++                (config.data_root / "current_manifest.json").write_bytes(canonical_json({
++                    "schema_version": "CHRONOS_CURRENT_V1",
++                    "vintage_id": candidate_id,
++                    "manifest_sha256": sha256_file(destination / "manifest.json"),
++                }))
++                with self.assertRaisesRegex(ValueError, message):
++                    load_covariate_table(config)

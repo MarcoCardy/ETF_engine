@@ -1,0 +1,25 @@
+{
+  "schema_version": "PORTFOLIO_CONFIG_V1",
+  "portfolio_id": "P_WORLD_FACTOR_TREND",
+  "base_currency": "EUR",
+  "rebalance": "MONTHLY_TARGET_WEIGHT",
+  "starting_value": 100,
+  "data_root": "data/portfolio_p_v1",
+  "max_staleness_calendar_days": 7,
+  "short_live_history_returns": 36,
+  "listing_currency_rule": "ALL_COMPONENTS_EUR_NO_FX",
+  "prelaunch_rule": "NO_DBMFE_BACKFILL_OR_SUBSTITUTION",
+  "investable_target_mapping": {
+    "WORLD": "SWDA",
+    "MOMENTUM": "IWMO",
+    "QUALITY": "IWQU",
+    "TREND": "DBMFE"
+  },
+  "proxy_caveat": "Chronos long historical targets are factor proxies; this report monitors exact investable ETF returns.",
+  "components": [
+    {"id": "SWDA", "ticker": "SWDA.MI", "isin": "IE00B4L5Y983", "quote_currency": "EUR", "weight": 0.60},
+    {"id": "IWMO", "ticker": "IWMO.MI", "isin": "IE00BP3QZ825", "quote_currency": "EUR", "weight": 0.15},
+    {"id": "IWQU", "ticker": "IWQU.MI", "isin": "IE00BP3QZ601", "quote_currency": "EUR", "weight": 0.15},
+    {"id": "DBMFE", "ticker": "DBMFE.PA", "isin": "LU2951555403", "quote_currency": "EUR", "weight": 0.10}
+  ]
+}

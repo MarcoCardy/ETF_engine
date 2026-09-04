@@ -1,0 +1,200 @@
+{
+  "window": {
+    "start": "2006-06-30",
+    "end": "2026-05-31",
+    "months": 240
+  },
+  "currency": "EUR_UNHEDGED",
+  "constraints": "LONG_ONLY_SUM_TO_ONE",
+  "expected_return_method": "ANNUALIZED_MONTHLY_ARITHMETIC_MEAN",
+  "asset_correlation": {
+    "WORLD": {
+      "WORLD": 1.0,
+      "MOMENTUM": 0.9018947678137869,
+      "QUALITY": 0.9692538957845793
+    },
+    "MOMENTUM": {
+      "WORLD": 0.9018947678137869,
+      "MOMENTUM": 1.0,
+      "QUALITY": 0.913217290586298
+    },
+    "QUALITY": {
+      "WORLD": 0.9692538957845793,
+      "MOMENTUM": 0.913217290586298,
+      "QUALITY": 1.0
+    }
+  },
+  "asset_backtests": {
+    "WORLD": {
+      "cagr": 0.09411169064448766,
+      "annualized_volatility": 0.1339002899185694,
+      "max_drawdown": -0.48214493610857856,
+      "ending_nav_eur": 4834183.785767364,
+      "commissions_eur": 19.0,
+      "spread_eur": 800.0
+    },
+    "MOMENTUM": {
+      "cagr": 0.1044980472452226,
+      "annualized_volatility": 0.14109105060724167,
+      "max_drawdown": -0.4607387838862952,
+      "ending_nav_eur": 5839679.798058339,
+      "commissions_eur": 19.0,
+      "spread_eur": 800.0
+    },
+    "QUALITY": {
+      "cagr": 0.11283561639209849,
+      "annualized_volatility": 0.13084409379029552,
+      "max_drawdown": -0.3989515133819247,
+      "ending_nav_eur": 6787507.519170815,
+      "commissions_eur": 19.0,
+      "spread_eur": 800.0
+    }
+  },
+  "solutions": {
+    "MINIMUM_VARIANCE": {
+      "weights": {
+        "WORLD": 0.10779832760864427,
+        "MOMENTUM": 0.06864534029428784,
+        "QUALITY": 0.8235563320970679
+      },
+      "ex_ante_arithmetic_return": 0.11376106024279536,
+      "ex_ante_volatility": 0.13071748346254325,
+      "risk_contributions": {
+        "WORLD": 0.10779832752588663,
+        "MOMENTUM": 0.06864534016765635,
+        "QUALITY": 0.823556332306457
+      },
+      "backtest": {
+        "cagr": 0.11040619433768573,
+        "annualized_volatility": 0.13072490300414558,
+        "max_drawdown": -0.410920547796202,
+        "ending_nav_eur": 6497218.961471519,
+        "commissions_eur": 1197.0,
+        "spread_eur": 1274.2298344644812
+      }
+    },
+    "MAXIMUM_SHARPE_ZERO_RATE": {
+      "weights": {
+        "WORLD": 0.0,
+        "MOMENTUM": 0.0,
+        "QUALITY": 1.0
+      },
+      "ex_ante_arithmetic_return": 0.11598207689287762,
+      "ex_ante_volatility": 0.1308434061320546,
+      "risk_contributions": {
+        "WORLD": 0.0,
+        "MOMENTUM": 0.0,
+        "QUALITY": 1.0
+      },
+      "backtest": {
+        "cagr": 0.11283561639209849,
+        "annualized_volatility": 0.13084409379029552,
+        "max_drawdown": -0.3989515133819247,
+        "ending_nav_eur": 6787507.519170815,
+        "commissions_eur": 19.0,
+        "spread_eur": 800.0
+      }
+    },
+    "EQUAL_RISK_CONTRIBUTION": {
+      "weights": {
+        "WORLD": 0.3348481948761627,
+        "MOMENTUM": 0.3238378926647585,
+        "QUALITY": 0.34131391245907877
+      },
+      "ex_ante_arithmetic_return": 0.10839695641827804,
+      "ex_ante_volatility": 0.1318920170684089,
+      "risk_contributions": {
+        "WORLD": 0.3333333334288019,
+        "MOMENTUM": 0.33333333297066936,
+        "QUALITY": 0.33333333360052875
+      },
+      "backtest": {
+        "cagr": 0.10437748903070121,
+        "annualized_volatility": 0.131913629291278,
+        "max_drawdown": -0.4418233090934537,
+        "ending_nav_eur": 5826944.749436584,
+        "commissions_eur": 1197.0,
+        "spread_eur": 1860.6390092164324
+      }
+    },
+    "EQUAL_WEIGHT": {
+      "weights": {
+        "WORLD": 0.3333333333333333,
+        "MOMENTUM": 0.3333333333333333,
+        "QUALITY": 0.3333333333333333
+      },
+      "ex_ante_arithmetic_return": 0.10836328473562734,
+      "ex_ante_volatility": 0.13195534431331768,
+      "risk_contributions": {
+        "WORLD": 0.33148981388212745,
+        "MOMENTUM": 0.343326721329491,
+        "QUALITY": 0.3251834647883817
+      },
+      "backtest": {
+        "cagr": 0.10433152575379778,
+        "annualized_volatility": 0.13197759848762428,
+        "max_drawdown": -0.4422534026144368,
+        "ending_nav_eur": 5822096.414320942,
+        "commissions_eur": 1197.0,
+        "spread_eur": 1866.8124345675742
+      }
+    }
+  },
+  "chronological_split": {
+    "train": {
+      "start": "2006-06-30",
+      "end": "2016-05-31"
+    },
+    "test": {
+      "start": "2016-06-30",
+      "end": "2026-05-31"
+    },
+    "trained_weights_and_test_results": {
+      "MINIMUM_VARIANCE": {
+        "weights": {
+          "WORLD": 0.0,
+          "MOMENTUM": 0.0,
+          "QUALITY": 1.0
+        },
+        "test_backtest": {
+          "cagr": 0.14314785548945919,
+          "annualized_volatility": 0.13805568168648452,
+          "max_drawdown": -0.1675040440196076,
+          "ending_nav_eur": 3048695.4779873993,
+          "commissions_eur": 19.0,
+          "spread_eur": 800.0
+        }
+      },
+      "MAXIMUM_SHARPE_ZERO_RATE": {
+        "weights": {
+          "WORLD": 0.0,
+          "MOMENTUM": 0.0,
+          "QUALITY": 1.0
+        },
+        "test_backtest": {
+          "cagr": 0.14314785548945919,
+          "annualized_volatility": 0.13805568168648452,
+          "max_drawdown": -0.1675040440196076,
+          "ending_nav_eur": 3048695.4779873993,
+          "commissions_eur": 19.0,
+          "spread_eur": 800.0
+        }
+      },
+      "EQUAL_RISK_CONTRIBUTION": {
+        "weights": {
+          "WORLD": 0.32898481965853654,
+          "MOMENTUM": 0.3185015028178418,
+          "QUALITY": 0.35251367752362167
+        },
+        "test_backtest": {
+          "cagr": 0.13590667822622304,
+          "annualized_volatility": 0.13479597864676193,
+          "max_drawdown": -0.17851587901263255,
+          "ending_nav_eur": 2860991.1577367736,
+          "commissions_eur": 627.0,
+          "spread_eur": 1198.097669901828
+        }
+      }
+    }
+  }
+}

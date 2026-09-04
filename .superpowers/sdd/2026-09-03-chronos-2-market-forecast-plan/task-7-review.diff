@@ -1,0 +1,139 @@
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-7-base/perpetual_engine/cli.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-7-head/perpetual_engine/cli.py"
+index 427c256..cf2ead3 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-7-base/perpetual_engine/cli.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-7-head/perpetual_engine/cli.py"
+@@ -34,6 +34,20 @@ def _parser() -> argparse.ArgumentParser:
+     backtest = subparsers.add_parser("backtest", help="run the deterministic offline historical backtest")
+     backtest.add_argument("--config", type=Path, required=True)
+     backtest.add_argument("--output", type=Path, required=True)
++    chronos = subparsers.add_parser("chronos", help="run the Chronos-2 forecast workflow")
++    chronos_commands = chronos.add_subparsers(dest="chronos_command", required=True)
++    chronos_refresh = chronos_commands.add_parser("refresh")
++    chronos_refresh.add_argument("--config", type=Path, required=True)
++    chronos_forecast = chronos_commands.add_parser("forecast")
++    chronos_forecast.add_argument("--config", type=Path, required=True)
++    chronos_forecast.add_argument("--output", type=Path, required=True)
++    chronos_evaluate = chronos_commands.add_parser("evaluate")
++    chronos_evaluate.add_argument("--config", type=Path, required=True)
++    chronos_evaluate.add_argument("--output", type=Path, required=True)
++    chronos_reconcile = chronos_commands.add_parser("reconcile")
++    chronos_reconcile.add_argument("--config", type=Path, required=True)
++    chronos_reconcile.add_argument("--forecast-root", type=Path, required=True)
++    chronos_reconcile.add_argument("--output", type=Path, required=True)
+     return parser
+ 
+ 
+@@ -79,11 +93,31 @@ def main(argv: list[str] | None = None) -> int:
+             from perpetual_engine.backtest_report import run_backtest_report
+ 
+             return run_backtest_report(args.config, args.output)
++        if args.command == "chronos" and args.chronos_command == "refresh":
++            from perpetual_engine.chronos_data import refresh_chronos_data
++
++            print(refresh_chronos_data(args.config))
++            return 0
++        if args.command == "chronos" and args.chronos_command == "forecast":
++            from perpetual_engine.chronos import publish_forecast
++
++            print(publish_forecast(args.config, args.output))
++            return 0
++        if args.command == "chronos" and args.chronos_command == "evaluate":
++            from perpetual_engine.chronos import evaluate_chronos
++
++            print(evaluate_chronos(args.config, args.output))
++            return 0
++        if args.command == "chronos" and args.chronos_command == "reconcile":
++            from perpetual_engine.chronos import reconcile_forecasts
++
++            print(reconcile_forecasts(args.config, args.forecast_root, args.output))
++            return 0
+     except (KeyError, OSError, TypeError, ValueError) as exc:
+         input_paths = [str(args.config)]
+         input_paths.extend(
+             str(getattr(args, name))
+-            for name in ("snapshot", "output", "out_dir")
++            for name in ("snapshot", "forecast_root", "output", "out_dir")
+             if getattr(args, name, None) is not None
+         )
+         print(f"Input error ({', '.join(input_paths)}): {exc}", file=sys.stderr)
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-7-base/tests/test_chronos.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-7-head/tests/test_chronos.py"
+index c718404..35b9ddf 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-7-base/tests/test_chronos.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-7-head/tests/test_chronos.py"
+@@ -1874,3 +1874,76 @@ class ChronosMonitoringTests(unittest.TestCase):
+         with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             with self.assertRaisesRegex(ValueError, "extra|CSV"):
+                 reconcile_forecasts(self.config.path, self.output_root / "forecasts", self.output_root / "extra-monitoring")
++
++
++class ChronosCliTests(unittest.TestCase):
++    def test_chronos_commands_dispatch_exact_paths_without_legacy_handlers(self):
++        from perpetual_engine.cli import main
++
++        cases = (
++            (
++                ["chronos", "refresh", "--config", "config.json"],
++                "perpetual_engine.chronos_data.refresh_chronos_data",
++                (Path("config.json"),),
++                "vintage-id",
++            ),
++            (
++                ["chronos", "forecast", "--config", "config.json", "--output", "out"],
++                "perpetual_engine.chronos.publish_forecast",
++                (Path("config.json"), Path("out")),
++                "forecast-id",
++            ),
++            (
++                ["chronos", "evaluate", "--config", "config.json", "--output", "out"],
++                "perpetual_engine.chronos.evaluate_chronos",
++                (Path("config.json"), Path("out")),
++                Path("out/evaluation-id"),
++            ),
++            (
++                [
++                    "chronos", "reconcile", "--config", "config.json",
++                    "--forecast-root", "forecasts", "--output", "out",
++                ],
++                "perpetual_engine.chronos.reconcile_forecasts",
++                (Path("config.json"), Path("forecasts"), Path("out")),
++                "monitoring-id",
++            ),
++        )
++        for argv, target, expected_args, returned in cases:
++            with self.subTest(command=argv[1]), patch(target, return_value=returned) as selected, patch(
++                "perpetual_engine.cli.evaluate_command"
++            ) as legacy_evaluate, patch(
++                "perpetual_engine.backtest_report.refresh_data"
++            ) as legacy_refresh, patch(
++                "perpetual_engine.backtest_report.run_backtest_report"
++            ) as legacy_backtest, patch("sys.stdout", new=io.StringIO()) as stdout, patch(
++                "sys.stderr", new=io.StringIO()
++            ) as stderr:
++                self.assertEqual(main(argv), 0)
++                selected.assert_called_once_with(*expected_args)
++                self.assertEqual(stdout.getvalue(), f"{returned}\n")
++                self.assertEqual(stderr.getvalue(), "")
++                legacy_evaluate.assert_not_called()
++                legacy_refresh.assert_not_called()
++                legacy_backtest.assert_not_called()
++
++    def test_chronos_corrupt_archive_is_an_input_error_with_all_paths(self):
++        from perpetual_engine.cli import main
++
++        argv = [
++            "chronos", "reconcile", "--config", "bad.json",
++            "--forecast-root", "broken-archive", "--output", "out",
++        ]
++        with patch(
++            "perpetual_engine.chronos.reconcile_forecasts", side_effect=ValueError("corrupt archive")
++        ), patch("sys.stdout", new=io.StringIO()) as stdout, patch(
++            "sys.stderr", new=io.StringIO()
++        ) as stderr:
++            self.assertEqual(main(argv), 2)
++        message = stderr.getvalue()
++        self.assertEqual(stdout.getvalue(), "")
++        self.assertIn("Input error", message)
++        self.assertIn("bad.json", message)
++        self.assertIn("broken-archive", message)
++        self.assertIn("out", message)
++        self.assertNotIn("Traceback", message)

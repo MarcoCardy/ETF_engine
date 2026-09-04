@@ -1,0 +1,389 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {
+    "hyperedges": [
+      {
+        "id": "gdi_debasement_signal_components"
+      },
+      {
+        "id": "tce_basket_paper_test"
+      },
+      {
+        "id": "tce_multi_asset_selection"
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_gdi_pressure",
+      "label": "GDI Pressure",
+      "community": 0,
+      "file_type": "concept",
+      "norm_label": "gdi pressure"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_gold_sdr",
+      "label": "Gold/SDR",
+      "community": 0,
+      "file_type": "concept",
+      "norm_label": "gold/sdr"
+    },
+    {
+      "id": "tce_materials_gdi_conditional_financial_repression",
+      "label": "Conditional Financial Repression",
+      "community": 0,
+      "file_type": "concept",
+      "norm_label": "conditional financial repression"
+    },
+    {
+      "id": "tce_materials_gdi_dew",
+      "label": "Debasement Early Warning",
+      "community": 0,
+      "file_type": "concept",
+      "norm_label": "debasement early warning"
+    },
+    {
+      "id": "tce_materials_gdi_gdi_monthly_v2",
+      "label": "GDI Monthly v2.0",
+      "community": 0,
+      "file_type": "concept",
+      "norm_label": "gdi monthly v2.0"
+    },
+    {
+      "id": "tce_materials_gdi_gdi_rt_v1_1",
+      "label": "GDI-RT v1.1",
+      "community": 0,
+      "file_type": "concept",
+      "norm_label": "gdi-rt v1.1"
+    },
+    {
+      "id": "tce_materials_gdi_global_money_nowcast",
+      "label": "Global Money Nowcast",
+      "community": 0,
+      "file_type": "concept",
+      "norm_label": "global money nowcast"
+    },
+    {
+      "id": "tce_materials_gdi_document",
+      "label": "GDI",
+      "community": 0,
+      "file_type": "document",
+      "norm_label": "gdi"
+    },
+    {
+      "id": "tce_materials_avviare_test_sgld",
+      "label": "Invesco Physical Gold ETC (SGLD)",
+      "community": 1,
+      "file_type": "concept",
+      "norm_label": "invesco physical gold etc (sgld)"
+    },
+    {
+      "id": "tce_materials_tce_weekly_nucl",
+      "label": "NUCL Starting Position",
+      "community": 1,
+      "file_type": "concept",
+      "norm_label": "nucl starting position"
+    },
+    {
+      "id": "tce_materials_tce_weekly_sgld",
+      "label": "Invesco Physical Gold ETC (SGLD)",
+      "community": 1,
+      "file_type": "concept",
+      "norm_label": "invesco physical gold etc (sgld)"
+    },
+    {
+      "id": "tce_materials_tce_weekly_tce_basket",
+      "label": "TCE Basket",
+      "community": 1,
+      "file_type": "concept",
+      "norm_label": "tce basket"
+    },
+    {
+      "id": "tce_materials_tce_weekly_wire",
+      "label": "WIRE Starting Position",
+      "community": 1,
+      "file_type": "concept",
+      "norm_label": "wire starting position"
+    },
+    {
+      "id": "tce_materials_tce_weekly_document",
+      "label": "Tce weekly",
+      "community": 1,
+      "file_type": "document",
+      "norm_label": "tce weekly"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_nucl",
+      "label": "VanEck Uranium and Nuclear Technologies UCITS ETF (NUCL)",
+      "community": 2,
+      "file_type": "concept",
+      "norm_label": "vaneck uranium and nuclear technologies ucits etf (nucl)"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_nuclear_energy",
+      "label": "Nuclear Energy Theme",
+      "community": 2,
+      "file_type": "concept",
+      "norm_label": "nuclear energy theme"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_tce_v1",
+      "label": "Thematic Confirmation Engine v1.0",
+      "community": 2,
+      "file_type": "concept",
+      "norm_label": "thematic confirmation engine v1.0"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_bubble_veto",
+      "label": "Bubble Veto",
+      "community": 2,
+      "file_type": "rationale",
+      "norm_label": "bubble veto"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_narrative_veto",
+      "label": "Narrative Veto",
+      "community": 2,
+      "file_type": "rationale",
+      "norm_label": "narrative veto"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_financial_repression",
+      "label": "Financial Repression",
+      "community": 3,
+      "file_type": "concept",
+      "norm_label": "financial repression"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_gdi_confirmed",
+      "label": "GDI Confirmed",
+      "community": 3,
+      "file_type": "concept",
+      "norm_label": "gdi confirmed"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_global_excess_money_growth",
+      "label": "Global Excess Money Growth",
+      "community": 3,
+      "file_type": "concept",
+      "norm_label": "global excess money growth"
+    },
+    {
+      "id": "tce_materials_avviare_test_tce_ma_v1",
+      "label": "TCE-MA v1.0",
+      "community": 4,
+      "file_type": "concept",
+      "norm_label": "tce-ma v1.0"
+    },
+    {
+      "id": "tce_materials_avviare_test_document",
+      "label": "Avviare test",
+      "community": 4,
+      "file_type": "document",
+      "norm_label": "avviare test"
+    },
+    {
+      "id": "tce_materials_avviare_test_rotation_rule",
+      "label": "TCE-MA Rotation Rule",
+      "community": 4,
+      "file_type": "rationale",
+      "norm_label": "tce-ma rotation rule"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_damodaran_erp",
+      "label": "Damodaran Implied Equity Risk Premium",
+      "community": 5,
+      "file_type": "concept",
+      "norm_label": "damodaran implied equity risk premium"
+    },
+    {
+      "id": "tce_materials_aggiorna_gdi_con_damodaran_document",
+      "label": "Aggiorna GDI con Damodaran",
+      "community": 5,
+      "file_type": "document",
+      "norm_label": "aggiorna gdi con damodaran"
+    }
+  ],
+  "links": [
+    {
+      "source": "tce_materials_aggiorna_gdi_con_damodaran_gdi_confirmed",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_financial_repression",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_aggiorna_gdi_con_damodaran_gdi_confirmed",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_global_excess_money_growth",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_aggiorna_gdi_con_damodaran_gdi_pressure",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_gold_sdr",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_aggiorna_gdi_con_damodaran_nuclear_energy",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_tce_v1",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_gdi_dew",
+      "target": "tce_materials_gdi_gdi_monthly_v2",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_gdi_gdi_monthly_v2",
+      "target": "tce_materials_gdi_conditional_financial_repression",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_gdi_gdi_monthly_v2",
+      "target": "tce_materials_gdi_global_money_nowcast",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_gdi_gdi_rt_v1_1",
+      "target": "tce_materials_gdi_gdi_monthly_v2",
+      "relation": "conceptually_related_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_aggiorna_gdi_con_damodaran_nuclear_energy",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_nucl",
+      "relation": "implements",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_avviare_test_tce_ma_v1",
+      "target": "tce_materials_avviare_test_sgld",
+      "relation": "implements",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_tce_weekly_tce_basket",
+      "target": "tce_materials_tce_weekly_nucl",
+      "relation": "implements",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_tce_weekly_tce_basket",
+      "target": "tce_materials_tce_weekly_wire",
+      "relation": "implements",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_aggiorna_gdi_con_damodaran_tce_v1",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_bubble_veto",
+      "relation": "rationale_for",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_aggiorna_gdi_con_damodaran_tce_v1",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_narrative_veto",
+      "relation": "rationale_for",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_avviare_test_tce_ma_v1",
+      "target": "tce_materials_avviare_test_rotation_rule",
+      "relation": "rationale_for",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_aggiorna_gdi_con_damodaran_document",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_damodaran_erp",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_avviare_test_document",
+      "target": "tce_materials_avviare_test_tce_ma_v1",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_gdi_document",
+      "target": "tce_materials_gdi_gdi_rt_v1_1",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_tce_weekly_document",
+      "target": "tce_materials_tce_weekly_sgld",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_tce_weekly_document",
+      "target": "tce_materials_tce_weekly_tce_basket",
+      "relation": "references",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_avviare_test_sgld",
+      "target": "tce_materials_tce_weekly_sgld",
+      "relation": "semantically_similar_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_avviare_test_tce_ma_v1",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_tce_v1",
+      "relation": "semantically_similar_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_gdi_gdi_monthly_v2",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_gdi_confirmed",
+      "relation": "semantically_similar_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    },
+    {
+      "source": "tce_materials_gdi_gdi_monthly_v2",
+      "target": "tce_materials_aggiorna_gdi_con_damodaran_gdi_pressure",
+      "relation": "semantically_similar_to",
+      "confidence_score": 1.0,
+      "source_file": ""
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "gdi_debasement_signal_components"
+    },
+    {
+      "id": "tce_basket_paper_test"
+    },
+    {
+      "id": "tce_multi_asset_selection"
+    }
+  ]
+}

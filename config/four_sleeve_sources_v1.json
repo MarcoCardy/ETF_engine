@@ -1,0 +1,55 @@
+{
+  "schema_version": "FOUR_SLEEVE_SOURCES_V1",
+  "sources": [
+    {
+      "source_id": "FRENCH_DEVELOPED_MONTHLY",
+      "url": "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/Developed_3_Factors_CSV.zip",
+      "parser_kind": "french_developed_factor_archive",
+      "parser_version": "1",
+      "status": "required",
+      "raw_filename": "Developed_3_Factors_CSV.zip",
+      "normalized_path": "french_developed_monthly.csv"
+    },
+    {
+      "source_id": "FRENCH_DEVELOPED_MOMENTUM_MONTHLY",
+      "url": "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/Developed_6_Portfolios_ME_Prior_12_2_CSV.zip",
+      "parser_kind": "french_developed_momentum_archive",
+      "parser_version": "1",
+      "status": "required",
+      "raw_filename": "Developed_6_Portfolios_ME_Prior_12_2_CSV.zip",
+      "normalized_path": "french_developed_big_hiprior_monthly.csv"
+    },
+    {
+      "source_id": "FRENCH_DEVELOPED_QUALITY_MONTHLY",
+      "url": "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/Developed_6_Portfolios_ME_OP_CSV.zip",
+      "parser_kind": "french_developed_quality_archive",
+      "parser_version": "1",
+      "status": "required",
+      "raw_filename": "Developed_6_Portfolios_ME_OP_CSV.zip",
+      "normalized_path": "french_developed_big_robust_monthly.csv"
+    },
+    {
+      "source_id": "AQR_TSMOM_MONTHLY",
+      "url": "https://www.aqr.com/-/media/AQR/Documents/Insights/Data-Sets/Time-Series-Momentum-Factors-Monthly.xlsx",
+      "parser_kind": "french_aqr_tsmom_archive",
+      "parser_version": "1",
+      "status": "required",
+      "raw_filename": "Time-Series-Momentum-Factors-Monthly.xlsx",
+      "normalized_path": "aqr_tsmom_monthly.csv"
+    },
+    {
+      "source_id": "FRED_DEXUSEU",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXUSEU",
+      "parser_kind": "fred_csv",
+      "parser_version": "1",
+      "status": "required",
+      "raw_filename": "DEXUSEU.csv",
+      "series_id": "DEXUSEU",
+      "unit": "USD_per_EUR",
+      "source_scale": "raw",
+      "frequency": "daily",
+      "availability": "observation_end",
+      "normalized_path": "fx_dexuseu.csv"
+    }
+  ]
+}

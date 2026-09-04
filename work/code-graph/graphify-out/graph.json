@@ -1,0 +1,3372 @@
+{
+  "nodes": [
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_init_py",
+      "label": "__init__.py",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\__init__.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_init_rationale_1",
+      "label": "Auditable real-capital and distribution-policy engine.",
+      "file_type": "rationale",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\__init__.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_main_py",
+      "label": "__main__.py",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\__main__.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "label": "cli.py",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_cli_empty_funding",
+      "label": "_empty_funding()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L14",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py_fundingresult",
+      "label": "FundingResult",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L14",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_cli_parser",
+      "label": "_parser()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L22",
+      "_origin": "ast"
+    },
+    {
+      "id": "argumentparser",
+      "label": "ArgumentParser",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L22",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_cli_evaluate_command",
+      "label": "evaluate_command()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L33",
+      "_origin": "ast"
+    },
+    {
+      "id": "namespace",
+      "label": "Namespace",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L33",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_cli_main",
+      "label": "main()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L61",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py",
+      "label": "funding.py",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_funding_marginal_sale",
+      "label": "marginal_sale()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L18",
+      "_origin": "ast"
+    },
+    {
+      "id": "holding",
+      "label": "Holding",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L18",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "label": "Decimal",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L18",
+      "_origin": "ast"
+    },
+    {
+      "id": "fundingtrade",
+      "label": "FundingTrade",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L18",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_funding_sort_key",
+      "label": "_sort_key()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L39",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_funding_empty",
+      "label": "_empty()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L52",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "label": "FundingResult",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L52",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_funding_fund_withdrawal",
+      "label": "fund_withdrawal()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L61",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "label": "PortfolioSnapshot",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L61",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "label": "PolicyDecision",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L61",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "label": "io.py",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_date",
+      "label": "_date()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L23",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "label": "Any",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L23",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_decimal",
+      "label": "_decimal()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L29",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_load_json",
+      "label": "_load_json()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L35",
+      "_origin": "ast"
+    },
+    {
+      "id": "path",
+      "label": "Path",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L35",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_load_config",
+      "label": "load_config()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L43",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "label": "PolicyConfig",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L43",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_cpi",
+      "label": "_cpi()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L60",
+      "_origin": "ast"
+    },
+    {
+      "id": "cpiobservation",
+      "label": "CpiObservation",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L60",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_holding",
+      "label": "_holding()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L73",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_load_snapshot",
+      "label": "load_snapshot()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L106",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "label": "PortfolioSnapshot",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L106",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_normalized_json",
+      "label": "normalized_json()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L126",
+      "_origin": "ast"
+    },
+    {
+      "id": "runresult",
+      "label": "RunResult",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L126",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_sha256_file",
+      "label": "sha256_file()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L135",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_io_write_summary_csv",
+      "label": "write_summary_csv()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L143",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "label": "models.py",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_money",
+      "label": "money()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L14",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_decimal",
+      "label": "Decimal",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L14",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_lifecycle",
+      "label": "Lifecycle",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L21",
+      "_origin": "ast"
+    },
+    {
+      "id": "strenum",
+      "label": "StrEnum",
+      "file_type": "code",
+      "source_file": "",
+      "source_location": "",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_distributionstate",
+      "label": "DistributionState",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L26",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_taxcategory",
+      "label": "TaxCategory",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L34",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_policyconfig",
+      "label": "PolicyConfig",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L42",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_policyconfig_default",
+      "label": ".default()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L56",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_policyconfig_post_init",
+      "label": ".__post_init__()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L59",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_cpiobservation",
+      "label": "CpiObservation",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L80",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_cpiobservation_post_init",
+      "label": ".__post_init__()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L86",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_holding",
+      "label": "Holding",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L94",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_holding_post_init",
+      "label": ".__post_init__()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L113",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_holding_market_value_eur",
+      "label": ".market_value_eur()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L136",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_portfoliosnapshot",
+      "label": "PortfolioSnapshot",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L141",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_portfoliosnapshot_post_init",
+      "label": ".__post_init__()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L152",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_policydecision",
+      "label": "PolicyDecision",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L170",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_fundingtrade",
+      "label": "FundingTrade",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L182",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_fundingresult",
+      "label": "FundingResult",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L195",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_runresult",
+      "label": "RunResult",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L209",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_models_to_primitive",
+      "label": "to_primitive()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L217",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_any",
+      "label": "Any",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L217",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "label": "policy.py",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L1",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_policy_cents",
+      "label": "_cents()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L18",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "label": "Decimal",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L18",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_policy_real_capital",
+      "label": "real_capital()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L22",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_policy_update_hwm",
+      "label": "update_hwm()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L28",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_policy_ratcheted_floor",
+      "label": "ratcheted_floor()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L32",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "label": "PolicyConfig",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L32",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_policy_target_net_real",
+      "label": "target_net_real()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L38",
+      "_origin": "ast"
+    },
+    {
+      "id": "lifecycle",
+      "label": "Lifecycle",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L38",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "label": "PolicyDecision",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L38",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_policy_incomplete",
+      "label": "_incomplete()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L80",
+      "_origin": "ast"
+    },
+    {
+      "id": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_portfoliosnapshot",
+      "label": "PortfolioSnapshot",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L80",
+      "_origin": "ast"
+    },
+    {
+      "id": "perpetual_engine_policy_evaluate_policy",
+      "label": "evaluate_policy()",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L94",
+      "_origin": "ast"
+    },
+    {
+      "id": "date",
+      "label": "date",
+      "file_type": "code",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L94",
+      "_origin": "ast"
+    }
+  ],
+  "edges": [
+    {
+      "source": "perpetual_engine_init_rationale_1",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_init_py",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\__init__.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_main_py",
+      "target": "perpetual_engine_cli",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\__main__.py",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "argparse",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "sys",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "datetime",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "pathlib",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "perpetual_engine_funding",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "perpetual_engine_io",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "perpetual_engine_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "perpetual_engine_policy",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "perpetual_engine_cli_empty_funding",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_empty_funding",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py_fundingresult",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "perpetual_engine_cli_parser",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_parser",
+      "target": "argumentparser",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "perpetual_engine_cli_evaluate_command",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "namespace",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py",
+      "target": "perpetual_engine_cli_main",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_empty_funding",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py_fundingresult",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_parser",
+      "target": "argumentparser",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "perpetual_engine_cli_empty_funding",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L40",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_main",
+      "target": "perpetual_engine_cli_parser",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L62",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_main",
+      "target": "perpetual_engine_cli_evaluate_command",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L66",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py",
+      "target": "collections",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py",
+      "target": "perpetual_engine_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py",
+      "target": "perpetual_engine_funding_marginal_sale",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_marginal_sale",
+      "target": "holding",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_marginal_sale",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_marginal_sale",
+      "target": "fundingtrade",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py",
+      "target": "perpetual_engine_funding_sort_key",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_sort_key",
+      "target": "holding",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py",
+      "target": "perpetual_engine_funding_empty",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_empty",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py",
+      "target": "perpetual_engine_funding_fund_withdrawal",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_fund_withdrawal",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_fund_withdrawal",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_fund_withdrawal",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_marginal_sale",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_marginal_sale",
+      "target": "fundingtrade",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_sort_key",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_sort_key",
+      "target": "perpetual_engine_funding_marginal_sale",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_empty",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_fund_withdrawal",
+      "target": "perpetual_engine_funding_empty",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L63",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_fund_withdrawal",
+      "target": "perpetual_engine_funding_marginal_sale",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_fund_withdrawal",
+      "target": "fundingtrade",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L148",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_funding_fund_withdrawal",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L164",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "csv",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "hashlib",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "json",
+      "relation": "imports",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "datetime",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "pathlib",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "typing",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_date",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_date",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_decimal",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L29",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_decimal",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L29",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_load_json",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_json",
+      "target": "path",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_json",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_load_config",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_config",
+      "target": "path",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_config",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_cpi",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_cpi",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_cpi",
+      "target": "cpiobservation",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_holding",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_holding",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "relation": "references",
+      "context": "generic_arg",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_load_snapshot",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L106",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_snapshot",
+      "target": "path",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L106",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_snapshot",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L106",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_normalized_json",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L126",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_normalized_json",
+      "target": "runresult",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L126",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_sha256_file",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L135",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_sha256_file",
+      "target": "path",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L135",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py",
+      "target": "perpetual_engine_io_write_summary_csv",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L143",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_write_summary_csv",
+      "target": "runresult",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L143",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_write_summary_csv",
+      "target": "path",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L143",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_config",
+      "target": "perpetual_engine_io_load_json",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_config",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L45",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_config",
+      "target": "perpetual_engine_io_date",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L47",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_config",
+      "target": "perpetual_engine_io_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L48",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_cpi",
+      "target": "cpiobservation",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_cpi",
+      "target": "perpetual_engine_io_date",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_cpi",
+      "target": "perpetual_engine_io_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L69",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_holding",
+      "target": "perpetual_engine_io_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_holding",
+      "target": "perpetual_engine_io_date",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L97",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_snapshot",
+      "target": "perpetual_engine_io_load_json",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L107",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_snapshot",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L111",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_snapshot",
+      "target": "perpetual_engine_io_date",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L112",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_snapshot",
+      "target": "perpetual_engine_io_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L114",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_snapshot",
+      "target": "perpetual_engine_io_holding",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L119",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_load_snapshot",
+      "target": "perpetual_engine_io_cpi",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L120",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "dataclasses",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "datetime",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_decimal",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "enum",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "typing",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_money",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_money",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_decimal",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_lifecycle",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_lifecycle",
+      "target": "strenum",
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_distributionstate",
+      "target": "strenum",
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_taxcategory",
+      "target": "strenum",
+      "relation": "inherits",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_policyconfig",
+      "target": "perpetual_engine_models_policyconfig_default",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L56",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_policyconfig",
+      "target": "perpetual_engine_models_policyconfig_post_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L59",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_cpiobservation",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_cpiobservation",
+      "target": "perpetual_engine_models_cpiobservation_post_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L86",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_holding",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_holding",
+      "target": "perpetual_engine_models_holding_post_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L113",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_holding",
+      "target": "perpetual_engine_models_holding_market_value_eur",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L136",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_holding_market_value_eur",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_decimal",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L136",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L141",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_portfoliosnapshot",
+      "target": "perpetual_engine_models_portfoliosnapshot_post_init",
+      "relation": "method",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L152",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L170",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_fundingtrade",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L182",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L195",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L209",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py",
+      "target": "perpetual_engine_models_to_primitive",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L217",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_to_primitive",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_any",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L217",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_money",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_policyconfig_post_init",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L75",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_models_holding_post_init",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_models_py_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\models.py",
+      "source_location": "L124",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "dataclasses",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "datetime",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "perpetual_engine_models",
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "perpetual_engine_policy_cents",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_cents",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "perpetual_engine_policy_real_capital",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_real_capital",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "perpetual_engine_policy_update_hwm",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L28",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_update_hwm",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L28",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "perpetual_engine_policy_ratcheted_floor",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_ratcheted_floor",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_ratcheted_floor",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "perpetual_engine_policy_target_net_real",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_target_net_real",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_target_net_real",
+      "target": "lifecycle",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_target_net_real",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_target_net_real",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "perpetual_engine_policy_incomplete",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_incomplete",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_portfoliosnapshot",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_incomplete",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_incomplete",
+      "target": "lifecycle",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_incomplete",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L80",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py",
+      "target": "perpetual_engine_policy_evaluate_policy",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_portfoliosnapshot",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "date",
+      "relation": "references",
+      "context": "parameter_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "relation": "references",
+      "context": "return_type",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_target_net_real",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_target_net_real",
+      "target": "perpetual_engine_policy_cents",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_target_net_real",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_incomplete",
+      "target": "perpetual_engine_policy_ratcheted_floor",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_incomplete",
+      "target": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L82",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "perpetual_engine_policy_incomplete",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L101",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "perpetual_engine_policy_real_capital",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L107",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "perpetual_engine_policy_update_hwm",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L112",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "perpetual_engine_policy_ratcheted_floor",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L113",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_policy_evaluate_policy",
+      "target": "perpetual_engine_policy_target_net_real",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L121",
+      "weight": 1.0
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py_fundingresult",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "argumentparser",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "namespace",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py_fundingresult",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "argumentparser",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "namespace",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_cli_py_fundingresult",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "argumentparser",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "namespace",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "holding",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "fundingtrade",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "holding",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "fundingtrade",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "target": "perpetual_engine_models_fundingresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "holding",
+      "target": "perpetual_engine_models_fundingtrade",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "target": "perpetual_engine_models_fundingtrade",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "fundingtrade",
+      "target": "perpetual_engine_models_fundingtrade",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "target": "perpetual_engine_models_fundingtrade",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_fundingtrade",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "target": "perpetual_engine_models_fundingtrade",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "holding",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "fundingtrade",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "holding",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "fundingtrade",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "holding",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "fundingtrade",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "holding",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_decimal",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "fundingtrade",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_fundingresult",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_funding_py_policydecision",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\funding.py",
+      "source_location": "L6",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "target": "perpetual_engine_models_cpiobservation",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "path",
+      "target": "perpetual_engine_models_cpiobservation",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "target": "perpetual_engine_models_cpiobservation",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "cpiobservation",
+      "target": "perpetual_engine_models_cpiobservation",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_cpiobservation",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "runresult",
+      "target": "perpetual_engine_models_cpiobservation",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "path",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "cpiobservation",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "runresult",
+      "target": "perpetual_engine_models_holding",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "path",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "cpiobservation",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "runresult",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "path",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "cpiobservation",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "runresult",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "path",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "cpiobservation",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "runresult",
+      "target": "perpetual_engine_models_runresult",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_any",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "path",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_policyconfig",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "cpiobservation",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_io_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "runresult",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L10",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "lifecycle",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "date",
+      "target": "perpetual_engine_models_distributionstate",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "target": "perpetual_engine_models_lifecycle",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "target": "perpetual_engine_models_lifecycle",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "lifecycle",
+      "target": "perpetual_engine_models_lifecycle",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "target": "perpetual_engine_models_lifecycle",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_lifecycle",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "date",
+      "target": "perpetual_engine_models_lifecycle",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "lifecycle",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "date",
+      "target": "perpetual_engine_models_policyconfig",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "lifecycle",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "date",
+      "target": "perpetual_engine_models_policydecision",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_decimal",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policyconfig",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "lifecycle",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_policydecision",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "c_users_marco_onedrive_desktop_etf_infazione_perpetual_engine_policy_py_portfoliosnapshot",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "date",
+      "target": "perpetual_engine_models_portfoliosnapshot",
+      "relation": "uses",
+      "confidence": "INFERRED",
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\policy.py",
+      "source_location": "L7",
+      "weight": 0.8
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "perpetual_engine_io_load_config",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L34",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "perpetual_engine_io_load_snapshot",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "perpetual_engine_policy_evaluate_policy",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L36",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "perpetual_engine_funding_fund_withdrawal",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "perpetual_engine_io_sha256_file",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L47",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "perpetual_engine_io_normalized_json",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_cli_evaluate_command",
+      "target": "perpetual_engine_io_write_summary_csv",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\cli.py",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_decimal",
+      "target": "perpetual_engine_models_money",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_holding",
+      "target": "perpetual_engine_models_taxcategory",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L90",
+      "weight": 1.0
+    },
+    {
+      "source": "perpetual_engine_io_normalized_json",
+      "target": "perpetual_engine_models_to_primitive",
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\perpetual_engine\\io.py",
+      "source_location": "L128",
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

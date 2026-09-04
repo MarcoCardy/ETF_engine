@@ -1,0 +1,32 @@
+{
+  "schema_version": "BACKTEST_CONFIG_V1",
+  "version": "1.0",
+  "input_manifest": "../data/frozen/current_manifest.json",
+  "initial_capital_eur": "800000",
+  "commission_per_executed_sleeve_order_eur": "19",
+  "spread_slippage_bps": "10",
+  "spread_sensitivity_bps": ["5", "20"],
+  "world_annual_fee": "0.002",
+  "leveraged_annual_fee": "0.006",
+  "capital_unit": "NOMINAL_MODEL_EUR",
+  "tax_treatment": "PRE_TAX",
+  "objective": "ACCUMULATION_GROWTH",
+  "distributions_eur": "0",
+  "output_files": {
+    "allocations": "allocations.csv",
+    "cost_decomposition": "cost_decomposition.csv",
+    "equity_curves": "equity_curves.csv",
+    "leveraged_validation": "leveraged_validation.json",
+    "run_manifest": "run_manifest.json",
+    "signals": "signals.csv",
+    "summary_metrics": "summary_metrics.json",
+    "world_validation": "world_validation.json"
+  },
+  "strategies": [
+    "WORLD_BENCHMARK",
+    "FIXED_60_20_20",
+    "DAMODARAN_ONLY",
+    "DAMODARAN_CRISIS_RECOVERY",
+    "PHASE2_COMPLETE"
+  ]
+}

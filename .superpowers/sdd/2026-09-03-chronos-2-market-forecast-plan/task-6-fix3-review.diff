@@ -1,0 +1,109 @@
+--- a/perpetual_engine/chronos.py
++++ b/perpetual_engine/chronos.py
+@@ -38,7 +38,6 @@
+ _MODEL_REVISION = "29ec3766d36d6f73f0696f85560a422f50e8498c"
+ _LOCKS: dict[Path, threading.Lock] = {}
+ _LOCKS_GUARD = threading.Lock()
+-_BOOTSTRAP_TOKEN = object()
+ 
+ 
+ @dataclass(frozen=True)
+@@ -90,7 +89,6 @@
+ class _BootstrapProof:
+     forecast_id: str
+     manifest_hash: str
+-    token: object
+ 
+ 
+ @contextmanager
+@@ -103,6 +101,9 @@
+     with local_lock:
+         lock_path = output_root / ".publication.lock"
+         with lock_path.open("a+b") as handle:
++            resolved_lock = Path(handle.name).resolve()
++            if resolved_lock.parent != output_root or resolved_lock.name != lock_path.name:
++                raise ValueError("publication lock escapes its output root direct child")
+             if handle.tell() == 0:
+                 handle.write(b"0")
+                 handle.flush()
+@@ -1166,7 +1167,7 @@
+             raise ValueError("target or covariate inputs changed during forecast")
+ 
+     _path, created = _atomic_snapshot(destination, staging_root, files, "forecast", precommit=inputs_unchanged)
+-    proof = _BootstrapProof(identifier, hashlib.sha256(files["manifest.json"]).hexdigest(), _BOOTSTRAP_TOKEN)
++    proof = _BootstrapProof(identifier, hashlib.sha256(files["manifest.json"]).hexdigest())
+     try:
+         _reconcile_forecasts_locked(
+             config_path,
+@@ -1276,8 +1277,6 @@
+     output = _safe_project_path(output, config, "monitoring output")
+     forecasts, manifest_hashes, forecast_ids = _scan_forecasts(forecast_root, config)
+     anchor_root = forecast_root.parent / "monitoring"
+-    if _bootstrap is not None and _bootstrap.token is not _BOOTSTRAP_TOKEN:
+-        raise ValueError("invalid forecast bootstrap proof")
+     bootstrap_found = False
+     for archived_id, archived_hash in zip(forecast_ids, manifest_hashes):
+         if (
+--- a/perpetual_engine/chronos_data.py
++++ b/perpetual_engine/chronos_data.py
+@@ -738,7 +738,7 @@
+     data_root = config.data_root.resolve()
+     if not data_root.is_relative_to(config.project_root.resolve()):
+         raise ValueError("data root escapes project root")
+-    pointer_path = data_root / "current_manifest.json"
++    pointer_path = _contained_file(data_root, "current_manifest.json", "current vintage pointer")
+     try:
+         pointer_bytes = pointer_path.read_bytes()
+     except OSError as error:
+--- a/tests/test_chronos.py
++++ b/tests/test_chronos.py
+@@ -514,6 +514,22 @@
+             table, loaded_id = data_module.load_covariate_table(config)
+         self.assertEqual(loaded_id, vintage_id)
+         self.assertEqual(float(table.values[0, 0]), 3.0)
++
++    def test_current_vintage_pointer_cannot_link_outside_data_root(self):
++        from perpetual_engine.chronos_data import load_chronos_config, load_covariate_table, refresh_chronos_data
++
++        refresh_chronos_data(self.config_path, fetcher=self.payloads.__getitem__, retrieved_at=self.at)
++        config = load_chronos_config(self.config_path)
++        pointer = config.data_root / "current_manifest.json"
++        external = self.root / "external-current-manifest.json"
++        pointer.replace(external)
++        try:
++            pointer.symlink_to(external)
++        except OSError as error:
++            self.skipTest(f"symlink non disponibile: {error}")
++
++        with self.assertRaisesRegex(ValueError, "pointer.*escapes|path escapes"):
++            load_covariate_table(config)
+ 
+     def test_refresh_identity_binds_retrieval_metadata(self):
+         from perpetual_engine.chronos_data import refresh_chronos_data
+@@ -1688,6 +1704,26 @@
+             thread.join(2)
+         self.assertTrue(second_acquired.is_set())
+ 
++    def test_publication_lock_never_writes_through_an_external_link(self):
++        import perpetual_engine.chronos as chronos_module
++
++        self.output_root.mkdir(parents=True)
++        external = self.root / "external-publication-lock"
++        external.write_bytes(b"")
++        self._symlink(self.output_root / ".publication.lock", external)
++        patches = self._patch_inputs()
++        try:
++            with patches[0], patches[1], patches[2], patches[3], patches[4]:
++                with self.assertRaisesRegex(ValueError, "lock.*(escapes|direct child)"):
++                    chronos_module.publish_forecast(
++                        self.config.path,
++                        self.output_root,
++                        predictor=self.fake_predictor,
++                        issued_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
++                    )
++        finally:
++            self.assertEqual(external.read_bytes(), b"")
++
+     def test_forecast_precommit_detects_mutation_between_target_bundle_reads(self):
+         import perpetual_engine.chronos as chronos_module
+ 

@@ -1,0 +1,160 @@
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-base/perpetual_engine/chronos.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-head/perpetual_engine/chronos.py"
+index 0011766..c0a6e74 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-base/perpetual_engine/chronos.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-head/perpetual_engine/chronos.py"
+@@ -21,6 +21,7 @@ from perpetual_engine.chronos_data import (
+     REQUIRED_V1_COVARIATES,
+     load_chronos_config,
+     load_covariate_table,
++    load_target_snapshot,
+     load_target_table,
+ )
+ from perpetual_engine.io import canonical_json, sha256_file
+@@ -341,7 +342,7 @@ def evaluate_chronos(config_path: Path, output: Path, predictor: Callable | None
+     project_root = config.project_root.resolve()
+     if not output.is_relative_to(project_root) or output == project_root:
+         raise ValueError("evaluation output escapes project root")
+-    targets = load_target_table(config)
++    targets, target_hash, target_manifest_hash = load_target_snapshot(config)
+     covariates, vintage_id = load_covariate_table(config)
+     origins, target_values, covariate_values = _evaluation_history(
+         targets, covariates, config.evaluation_origins
+@@ -512,8 +513,8 @@ def evaluate_chronos(config_path: Path, output: Path, predictor: Callable | None
+         "schema_version": "CHRONOS_EVALUATION_V1",
+         "model": {"id": config.model_id, "revision": config.model_revision, "package": "chronos-forecasting", "package_version": package_version, "device": config.device},
+         "config_sha256": config.config_hash,
+-        "target_csv_sha256": sha256_file(config.target_csv),
+-        "target_manifest_sha256": sha256_file(config.target_manifest),
++        "target_csv_sha256": target_hash,
++        "target_manifest_sha256": target_manifest_hash,
+         "vintage_id": vintage_id,
+         "evaluation_origins": {"count": 36, "first": targets.months[origins[0]].isoformat(), "last": targets.months[origins[-1]].isoformat()},
+         "bootstrap": {"block_months": 6, "resamples": 2000, "seed": 42, "confidence": 0.95},
+@@ -521,4 +522,6 @@ def evaluate_chronos(config_path: Path, output: Path, predictor: Callable | None
+         "labels": {"evaluation": "RETROSPECTIVE_WALK_FORWARD_RESEARCH", "oracle": "ORACLE_FUTURE_RATE_UPPER_BOUND"},
+         "generated_sha256": generated_hashes,
+     }
++    if sha256_file(config.target_csv) != target_hash or sha256_file(config.target_manifest) != target_manifest_hash:
++        raise ValueError("target inputs changed during evaluation")
+     return _publish_evaluation(output, {**csv_files, "manifest.json": canonical_json(manifest)})
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-base/perpetual_engine/chronos_data.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-head/perpetual_engine/chronos_data.py"
+index 2252b44..8994347 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-base/perpetual_engine/chronos_data.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-head/perpetual_engine/chronos_data.py"
+@@ -183,18 +183,21 @@ def load_chronos_config(path: Path) -> ChronosConfig:
+     )
+ 
+ 
+-def load_target_table(config: ChronosConfig) -> MonthlyTable:
++def load_target_snapshot(config: ChronosConfig) -> tuple[MonthlyTable, str, str]:
+     try:
+-        manifest = _mapping(json.loads(config.target_manifest.read_text(encoding="utf-8")), "target manifest")
++        target_bytes = config.target_csv.read_bytes()
++        manifest_bytes = config.target_manifest.read_bytes()
++        manifest = _mapping(json.loads(manifest_bytes.decode("utf-8")), "target manifest")
+         expected_hash = _mapping(manifest["generated_sha256"], "target manifest generated_sha256")["monthly_returns.csv"]
+-    except (KeyError, OSError, json.JSONDecodeError) as error:
++    except (KeyError, OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+         raise ValueError("target manifest is malformed") from error
+-    if manifest.get("schema_version") != "FOUR_SLEEVE_REPORT_V1" or not isinstance(expected_hash, str) or expected_hash != sha256_file(config.target_csv):
++    target_hash = hashlib.sha256(target_bytes).hexdigest()
++    manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
++    if manifest.get("schema_version") != "FOUR_SLEEVE_REPORT_V1" or not isinstance(expected_hash, str) or expected_hash != target_hash:
+         raise ValueError("target hash does not match manifest")
+     try:
+-        with config.target_csv.open("r", encoding="utf-8", newline="") as handle:
+-            rows = list(csv.reader(handle))
+-    except OSError as error:
++        rows = list(csv.reader(io.StringIO(target_bytes.decode("utf-8"), newline="")))
++    except UnicodeDecodeError as error:
+         raise ValueError("target CSV is unreadable") from error
+     required_header = ("month", *config.targets)
+     if not rows or tuple(rows[0][:len(required_header)]) != required_header:
+@@ -221,7 +224,11 @@ def load_target_table(config: ChronosConfig) -> MonthlyTable:
+         raise ValueError("target CSV has no observations")
+     array = np.asarray(values, dtype=float).T
+     array.flags.writeable = False
+-    return MonthlyTable(tuple(months), config.targets, array)
++    return MonthlyTable(tuple(months), config.targets, array), target_hash, manifest_hash
++
++
++def load_target_table(config: ChronosConfig) -> MonthlyTable:
++    return load_target_snapshot(config)[0]
+ 
+ 
+ def covariate_names(config: ChronosConfig) -> tuple[str, ...]:
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-base/tests/test_chronos.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-head/tests/test_chronos.py"
+index 010fe9f..709973e 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-base/tests/test_chronos.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-5-fix1-head/tests/test_chronos.py"
+@@ -887,10 +887,26 @@ class ChronosEvaluationTests(unittest.TestCase):
+         from perpetual_engine.chronos import evaluate_chronos
+ 
+         with patch("perpetual_engine.chronos.load_chronos_config", return_value=self.config), patch(
+-            "perpetual_engine.chronos.load_target_table", return_value=self.targets
++            "perpetual_engine.chronos.load_target_snapshot", return_value=(
++                self.targets,
++                sha256_file(self.config.target_csv),
++                sha256_file(self.config.target_manifest),
++            )
+         ), patch("perpetual_engine.chronos.load_covariate_table", return_value=(self.covariates, "v" * 64)):
+             return evaluate_chronos(self.config.path, self.output, self.fake_predictor)
+ 
++    def _write_target_bundle(self):
++        output = io.StringIO(newline="")
++        writer = csv.writer(output, lineterminator="\n")
++        writer.writerow(("month", "WORLD", "MOMENTUM", "QUALITY", "TREND"))
++        for month_index, month in enumerate(self.targets.months):
++            writer.writerow((month.isoformat(), *(self.targets.values[target, month_index] for target in range(4))))
++        self.config.target_csv.write_bytes(output.getvalue().encode("utf-8"))
++        self.config.target_manifest.write_bytes(canonical_json({
++            "schema_version": "FOUR_SLEEVE_REPORT_V1",
++            "generated_sha256": {"monthly_returns.csv": sha256_file(self.config.target_csv)},
++        }))
++
+     def test_metric_variant_and_paired_bootstrap_contracts(self):
+         from perpetual_engine.chronos import evaluation_variants, moving_block_interval, pinball_loss
+ 
+@@ -975,6 +991,8 @@ class ChronosEvaluationTests(unittest.TestCase):
+             "oracle": "ORACLE_FUTURE_RATE_UPPER_BOUND",
+         })
+         self.assertEqual(manifest["bootstrap"], {"block_months": 6, "resamples": 2000, "seed": 42, "confidence": 0.95})
++        self.assertEqual(manifest["target_csv_sha256"], sha256_file(self.config.target_csv))
++        self.assertEqual(manifest["target_manifest_sha256"], sha256_file(self.config.target_manifest))
+         self.assertEqual(set(manifest["volatility_thresholds"]), {"WORLD", "MOMENTUM", "QUALITY", "TREND"})
+         self.assertEqual(set(manifest["generated_sha256"]), {
+             "predictions.csv", "metrics.csv", "covariate_contribution.csv", "volatility_diagnostics.csv"
+@@ -1023,3 +1041,33 @@ class ChronosEvaluationTests(unittest.TestCase):
+             _publish_evaluation(occupied, files)
+         with self.assertRaisesRegex(ValueError, "collision"):
+             _publish_evaluation(occupied / "child", files)
++
++    def test_target_snapshot_returns_hashes_for_the_exact_bytes_it_parses(self):
++        from perpetual_engine.chronos_data import load_target_snapshot
++
++        self._write_target_bundle()
++        table, target_hash, manifest_hash = load_target_snapshot(self.config)
++
++        np.testing.assert_array_equal(table.values, self.targets.values)
++        self.assertEqual(target_hash, sha256_file(self.config.target_csv))
++        self.assertEqual(manifest_hash, sha256_file(self.config.target_manifest))
++
++    def test_evaluation_rejects_target_changed_after_analysis_before_publication(self):
++        from perpetual_engine.chronos import evaluate_chronos
++
++        self._write_target_bundle()
++        mutated = False
++
++        def mutate_after_load(items, prediction_length, quantile_levels):
++            nonlocal mutated
++            if not mutated:
++                self.config.target_csv.write_bytes(self.config.target_csv.read_bytes() + b"changed")
++                mutated = True
++            return self.fake_predictor(items, prediction_length, quantile_levels)
++
++        with patch("perpetual_engine.chronos.load_chronos_config", return_value=self.config), patch(
++            "perpetual_engine.chronos.load_covariate_table", return_value=(self.covariates, "v" * 64)
++        ):
++            with self.assertRaisesRegex(ValueError, "target.*changed"):
++                evaluate_chronos(self.config.path, self.output, mutate_after_load)
++        self.assertFalse(self.output.exists())

@@ -1,0 +1,153 @@
+diff --git "a/C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-1-head/perpetual_engine/chronos_data.py" "b/C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-1-fix1-head/perpetual_engine/chronos_data.py"
+index ad9428d..5418454 100644
+--- "a/C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-1-head/perpetual_engine/chronos_data.py"
++++ "b/C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-1-fix1-head/perpetual_engine/chronos_data.py"
+@@ -10,20 +10,26 @@ from pathlib import Path
+ from typing import Any
+ 
+ import numpy as np
+ 
+ from perpetual_engine.io import canonical_json, sha256_file
+ 
+ 
+ _TARGETS = ("WORLD", "MOMENTUM", "QUALITY", "TREND")
+ _REQUIRED_SOURCES = ("ECB_DFR", "US_TREASURY_10Y", "BRENT_RETURN", "BIS_USD_CREDIT_YOY")
+ _REGISTERED_PARSERS = frozenset({"ecb_dfr", "fred_dgs10", "fred_brent", "bis_gli"})
++_REQUIRED_SOURCE_MAPPINGS = {
++    "ECB_DFR": ("ecb_dfr", "known_future"),
++    "US_TREASURY_10Y": ("fred_dgs10", "past_only"),
++    "BRENT_RETURN": ("fred_brent", "past_only"),
++    "BIS_USD_CREDIT_YOY": ("bis_gli", "past_only"),
++}
+ _MODEL = ("amazon/chronos-2", "29ec3766d36d6f73f0696f85560a422f50e8498c", "cpu")
+ 
+ 
+ @dataclass(frozen=True)
+ class SourceSpec:
+     source_id: str
+     url: str
+     parser: str
+     role: str
+ 
+@@ -106,26 +112,36 @@ def load_chronos_config(path: Path) -> ChronosConfig:
+     quantiles = tuple(data.get("quantiles", ()))
+     if data.get("prediction_length") != 12 or quantiles != (0.1, 0.5, 0.9):
+         raise ValueError("Chronos prediction contract is invalid")
+     raw_sources = data.get("sources")
+     if not isinstance(raw_sources, list):
+         raise ValueError("Chronos sources must be an array")
+     sources: list[SourceSpec] = []
+     for raw in raw_sources:
+         source = _mapping(raw, "source")
+         source_id, url, parser, role = source.get("id"), source.get("url"), source.get("parser"), source.get("role")
+-        if not all(isinstance(value, str) and value for value in (source_id, url, parser, role)) or parser not in _REGISTERED_PARSERS:
++        if (
++            not all(isinstance(value, str) and value for value in (source_id, url, parser, role))
++            or parser not in _REGISTERED_PARSERS
++            or role not in {"known_future", "past_only"}
++        ):
+             raise ValueError("Chronos source is invalid or has an unregistered parser")
+         sources.append(SourceSpec(source_id, url, parser, role))
+     source_ids = tuple(source.source_id for source in sources)
+     if len(source_ids) != len(set(source_ids)) or any(source_ids.count(source_id) != 1 for source_id in _REQUIRED_SOURCES):
+         raise ValueError("Chronos requires each v1 source exactly once")
++    if any(
++        (source.parser, source.role) != _REQUIRED_SOURCE_MAPPINGS[source.source_id]
++        for source in sources
++        if source.source_id in _REQUIRED_SOURCE_MAPPINGS
++    ) or any(source.role == "known_future" and source.source_id != "ECB_DFR" for source in sources):
++        raise ValueError("Chronos source mapping is invalid")
+     try:
+         reported_horizons = tuple(evaluation["reported_horizons"])
+         numeric_values = (data["scenario_basis_points"], evaluation["origins"], bootstrap["block_months"], bootstrap["resamples"], bootstrap["seed"])
+         confidence = bootstrap["confidence"]
+     except KeyError as error:
+         raise ValueError("Chronos configuration is incomplete") from error
+     if numeric_values != (100, 36, 6, 2000, 42) or reported_horizons != (1, 3, 6, 12) or confidence != 0.95:
+         raise ValueError("Chronos evaluation contract is invalid")
+     return ChronosConfig(
+         path, project_root, model_values[0], model_values[1], model_values[2],
+diff --git "a/C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-1-head/tests/test_chronos.py" "b/C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-1-fix1-head/tests/test_chronos.py"
+index ba719b2..ce82032 100644
+--- "a/C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-1-head/tests/test_chronos.py"
++++ "b/C:\\Users\\marco\\OneDrive\\Desktop\\ETF_infazione\\.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-1-fix1-head/tests/test_chronos.py"
+@@ -54,35 +54,77 @@ class ChronosConfigTests(unittest.TestCase):
+                 {"id": "BIS_USD_CREDIT_YOY", "url": "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip", "parser": "bis_gli", "role": "past_only"},
+             ],
+             "evaluation": {"origins": 36, "reported_horizons": [1, 3, 6, 12]},
+             "bootstrap": {"block_months": 6, "resamples": 2000, "seed": 42, "confidence": 0.95},
+         }))
+ 
+     def test_load_chronos_config_freezes_v1_contract(self):
+         from perpetual_engine.chronos_data import load_chronos_config
+ 
+         config = load_chronos_config(self.config_path)
++        self.assertEqual(config.path, self.config_path.resolve())
++        self.assertEqual(config.project_root, self.root.resolve())
+         self.assertEqual(config.model_id, "amazon/chronos-2")
+         self.assertEqual(config.model_revision, "29ec3766d36d6f73f0696f85560a422f50e8498c")
+         self.assertEqual((config.device, config.prediction_length, config.quantiles), ("cpu", 12, (0.1, 0.5, 0.9)))
++        self.assertEqual(config.target_csv, self.csv_path.resolve())
++        self.assertEqual(config.target_manifest, self.manifest_path.resolve())
+         self.assertEqual(config.targets, ("WORLD", "MOMENTUM", "QUALITY", "TREND"))
+-        self.assertEqual(tuple(source.source_id for source in config.sources), ("ECB_DFR", "US_TREASURY_10Y", "BRENT_RETURN", "BIS_USD_CREDIT_YOY"))
++        self.assertEqual(config.scenario_basis_points, 100)
++        self.assertEqual(config.data_root, (self.root / "data" / "chronos_v1").resolve())
++        self.assertEqual(
++            tuple((source.source_id, source.url, source.parser, source.role) for source in config.sources),
++            (
++                ("ECB_DFR", "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR.LEV?format=csvdata", "ecb_dfr", "known_future"),
++                ("US_TREASURY_10Y", "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10", "fred_dgs10", "past_only"),
++                ("BRENT_RETURN", "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU", "fred_brent", "past_only"),
++                ("BIS_USD_CREDIT_YOY", "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip", "bis_gli", "past_only"),
++            ),
++        )
++        self.assertEqual((config.evaluation_origins, config.reported_horizons), (36, (1, 3, 6, 12)))
++        self.assertEqual(
++            (config.bootstrap_block_months, config.bootstrap_resamples, config.bootstrap_seed, config.bootstrap_confidence),
++            (6, 2000, 42, 0.95),
++        )
+         self.assertEqual(config.config_hash, hashlib.sha256(self.config_path.read_bytes()).hexdigest())
+ 
++    def test_load_chronos_config_rejects_invalid_required_source_mappings(self):
++        from perpetual_engine.chronos_data import load_chronos_config
++
++        config = json.loads(self.config_path.read_text(encoding="utf-8"))
++        invalid_mappings = (
++            (0, "parser", "fred_dgs10"),
++            (1, "role", "known_future"),
++            (2, "role", "known_future"),
++            (3, "role", "known_future"),
++        )
++        for index, field, value in invalid_mappings:
++            with self.subTest(index=index, field=field):
++                changed = json.loads(json.dumps(config))
++                changed["sources"][index][field] = value
++                self.config_path.write_bytes(canonical_json(changed))
++                with self.assertRaisesRegex(ValueError, "source mapping"):
++                    load_chronos_config(self.config_path)
++        changed = json.loads(json.dumps(config))
++        changed["sources"].append({"id": "EXTRA", "url": "https://example.test/extra", "parser": "ecb_dfr", "role": "known_future"})
++        self.config_path.write_bytes(canonical_json(changed))
++        with self.assertRaisesRegex(ValueError, "source mapping"):
++            load_chronos_config(self.config_path)
++
+     def test_load_target_table_validates_manifest_and_order(self):
+         from perpetual_engine.chronos_data import load_chronos_config, load_target_table
+ 
+         config = load_chronos_config(self.config_path)
+         table = load_target_table(config)
+         self.assertEqual(table.names, ("WORLD", "MOMENTUM", "QUALITY", "TREND"))
+         self.assertEqual(table.values.shape, (4, 3))
+-        self.assertEqual(table.months[-1], date(2024, 3, 31))
++        self.assertEqual(table.months, (date(2024, 1, 31), date(2024, 2, 29), date(2024, 3, 31)))
+         self.assertAlmostEqual(float(table.values[0, 0]), 0.01)
+         self.assertFalse(table.values.flags.writeable)
+ 
+     def test_load_target_table_rejects_manifest_hash_mismatch(self):
+         from perpetual_engine.chronos_data import load_chronos_config, load_target_table
+ 
+         manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
+         manifest["generated_sha256"]["monthly_returns.csv"] = "0" * 64
+         self.manifest_path.write_bytes(canonical_json(manifest))
+         with self.assertRaisesRegex(ValueError, "target hash"):

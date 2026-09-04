@@ -1,0 +1,12 @@
+{
+  "period": "2006-06-30/2026-05-31",
+  "annual_table": "2007-2025 complete years; 2026 January-May",
+  "return_definition": "product of monthly (1+r) minus 1",
+  "volatility_definition": "monthly sample standard deviation times sqrt(12)",
+  "portfolio_weights": {
+    "WORLD": 0.330470588235,
+    "MOMENTUM": 0.266352941176,
+    "QUALITY": 0.403176470589
+  },
+  "history_note": "20-year historical proxies in EUR, not live ETF share-class returns"
+}

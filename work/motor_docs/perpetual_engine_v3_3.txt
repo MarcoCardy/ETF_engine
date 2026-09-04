@@ -1,0 +1,935 @@
+PERPETUAL ENGINE v3.3 — EUR TAX & FUNDING AWARE
+
+Specifica completa da incollare in una nuova chat per rifare Monte Carlo, bootstrap e walk-forward
+
+ISTRUZIONE PRINCIPALE
+
+Rifare da zero tutti i calcoli. NON riutilizzare i vecchi output come risultati del nuovo modello.
+I vecchi numeri riportati più sotto servono soltanto come benchmark di confronto.
+
+Obiettivo:
+costruire e validare un sistema patrimoniale potenzialmente perpetuo che:
+
+preservi il capitale reale in EUR;
+
+distribuisca una rendita reale sostenibile;
+
+riduca sequence-of-returns risk;
+
+minimizzi tax drag, turnover e costi;
+
+utilizzi Damodaran ERP, trend, volatilità, Treasury/TIPS e Recovery Engine senza look-ahead;
+
+usi LWLD soltanto come strumento di controllo del beta/portable beta, non come “scommessa” indipendente;
+
+determini numericamente il massimo PIR sostenibile mediante ottimizzazione vincolata.
+
+1. UNITÀ DI CONTO E CAPITALE
+
+Valuta del modello:
+EUR
+
+Capitale iniziale reale:
+C0 = 800,000 EUR
+
+Rendita target di riferimento:
+1,600 EUR reali/mese
+= 19,200 EUR reali/anno
+= PIR 2.40%
+
+PIR robusto provvisorio emerso dai test precedenti:
+circa 2.0%
+= circa 1,333 EUR reali/mese su 800,000 EUR
+
+IMPORTANTE:
+Il nuovo Monte Carlo deve ricalcolare da zero sia il PIR robusto sia il PIR target massimo sostenibile.
+
+2. DEFINIZIONE DI CAPITALE REALE E RENDITA
+
+Usare inflazione ITALIANA/EURO per il potere d’acquisto della rendita.
+
+CapitalTarget_t =
+800,000 * CPI_IT_t / CPI_IT_0
+
+WithdrawalTarget_t =
+PIR * 800,000 / 12 * CPI_IT_t / CPI_IT_0
+
+RealPortfolioValue_t =
+NominalPortfolioValue_t * CPI_IT_0 / CPI_IT_t
+
+Real Capital Coverage Ratio:
+RCCR_t =
+RealPortfolioValue_t / 800,000
+
+Real Capital Buffer:
+RCB_t =
+RealPortfolioValue_t - 800,000
+
+Non usare CPI USA come deflatore della rendita.
+Il CPI USA può rimanere una variabile macroeconomica ausiliaria, ma non è il deflatore principale.
+
+3. SERIE STORICHE DA USARE
+
+3.1 MSCI World / SWDA proxy
+
+Preferenza:
+MSCI World Net Total Return.
+
+Periodo target:
+almeno 1979-oggi in EUR;
+idealmente 1970-oggi se possibile con dati affidabili.
+
+Storico utilizzato finora come proxy:
+MSCI World Gross/Total Return USD da dataset mensile pubblico.
+
+Conversione corretta in EUR:
+R_World_EUR,t =
+(1 + R_World_USD,t) * (1 + R_USD_in_EUR,t) - 1
+
+ATTENZIONE:
+usare la convenzione FX coerente con la serie scaricata.
+Verificare il verso del cambio con un controllo numerico.
+
+Serie cambio già utilizzata:
+FRED/OECD:
+CCUSMA02EZM618N
+Currency Conversions: US Dollar Exchange Rate: Average of Daily Rates: National Currency: USD for Euro Area
+
+Validare la ricostruzione contro SWDA quotato in EUR per il periodo in cui l’ETF esiste.
+
+3.2 Inflazione italiana
+
+Serie mensile già utilizzata:
+FRED/OECD:
+ITACPALTT01IXNBM
+
+Usare l’indice mensile italiano come deflatore del patrimonio e della rendita.
+
+3.3 Damodaran Implied ERP
+
+Usare:
+
+serie annuale dal 1960;
+
+serie mensile T12M da settembre 2008.
+
+Fonti:
+Damodaran historical implied ERP:
+https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histimpl.html
+
+ERP by month:
+https://pages.stern.nyu.edu/~adamodar/pc/ERPbymonth.xlsx
+
+Anti-look-ahead:
+Per il rendimento del mese t usare SOLO l’ERP pubblicabile/disponibile all’inizio di quel mese.
+
+Regola temporale:
+
+prima di settembre 2008: usare l’ultimo ERP annuale già noto;
+
+da settembre 2008 in poi: usare ERP T12M mensile disponibile all’inizio del mese.
+
+3.4 Treasury USA 10Y
+
+Serie:
+FRED GS10 oppure DGS10.
+
+Uso:
+variabile di regime / risk-free / valutazione,
+NON come deflatore,
+NON come sostituto dell’ERP.
+
+Relazione corretta:
+Expected Equity Return ≈ Treasury 10Y + ERP
+
+Non confrontare direttamente “ERP vs Treasury” come se fossero rendimenti alternativi.
+
+3.5 TIPS 10Y real yield
+
+Serie:
+FRED DFII10
+
+Disponibile dal:
+2003-01-02
+
+Uso:
+Treasury veto / costo opportunità del rischio.
+
+Calcolare percentile storico del real yield TIPS.
+
+Regola qualitativa:
+
+TIPS real yield > 90° percentile => vietare leva aggressiva;
+
+TIPS > 95° percentile + ERP < 60° percentile => beta massimo circa 0.90.
+
+Da ottimizzare walk-forward, non considerare questi valori dogmatici.
+
+3.6 Componente governativa breve EUR
+
+Per il backtest storico è stata usata come proxy:
+FRED:
+IR3TIB01ITM156N
+3-Month Interbank Rate: Italy
+mensile dal 1978.
+
+Per implementazione reale:
+preferire BOT / governativi EUR brevi,
+non Treasury USD non hedged come “riserva di rendita”.
+
+Il Treasury USA è un SEGNALE.
+La riserva operativa deve essere coerente con spese in EUR.
+
+3.7 Forward Earnings Yield
+
+Variabile desiderata:
+Forward E/P MSCI World.
+
+Stato:
+NON ancora congelata perché manca una serie storica sufficientemente auditabile e consistente.
+
+Regola:
+non introdurla nel Monte Carlo finché non si trova una fonte storica affidabile.
+Può essere usata successivamente come modulo separato.
+
+4. SWDA E LWLD: RUOLO ECONOMICO
+
+SWDA
+
+Ruolo:
+core strategico di lungo periodo.
+
+TER:
+circa 0.20% annuo.
+
+Principio fiscale:
+evitare vendite tattiche frequenti del core,
+perché in Italia la realizzazione di plusvalenze genera tax drag.
+
+LWLD
+
+Prodotto:
+Amundi MSCI World (2x) Leveraged UCITS ETF Acc
+
+ISIN:
+FR0014010HV4
+
+Benchmark:
+MSCI World Leveraged 2X Daily Net Index
+
+Costo annuo dichiarato:
+circa 0.60%
+
+Ruolo:
+overlay di beta / portable beta.
+NON considerarlo una “asset class” strategica indipendente.
+
+La leva è giornaliera.
+NON usare:
+2 × rendimento mensile World EUR
+come formula definitiva.
+
+La costruzione corretta è:
+
+applicare la leva giornaliera al World USD;
+
+incorporare funding/reset/volatility drag;
+
+convertire il risultato in EUR.
+
+In altre parole:
+LWLD_EUR ≠ 2 × World_EUR.
+
+La leva agisce PRIMA sul benchmark USD;
+il cambio EUR/USD viene applicato DOPO.
+
+5. CALIBRAZIONE DEL PROXY LWLD
+
+È stato calibrato un proxy del leveraged index contro il vero MSCI World 2X Daily.
+
+Riferimento MSCI al 30-06-2023:
+3 anni ≈ 22.21% annuo
+5 anni ≈ 14.31% annuo
+10 anni ≈ 17.22% annuo
+
+Proxy calibrato:
+3 anni ≈ 21.75%
+5 anni ≈ 14.85%
+10 anni ≈ 17.22%
+
+Errore di validazione:
+circa 0.5 punti percentuali annui sui periodi 3/5 anni.
+
+Drag implicito stimato:
+circa 1.10% annuo rispetto a una rozza leva mensile 2×.
+
+IMPORTANTE:
+nel nuovo modello usare preferibilmente una ricostruzione giornaliera corretta.
+Se non disponibile, usare un proxy calibrato e stressare il drag.
+
+Stress test del drag LWLD:
+almeno 0.6%, 1.1%, 1.5% annuo di drag equivalente
+oltre/entro quanto già incorporato nella metodologia scelta,
+evitando il doppio conteggio del funding.
+
+6. STRUTTURA STRATEGICA INIZIALE v3.3
+
+Configurazione normale iniziale:
+
+60% SWDA
+20% LWLD
+20% BOT / governativi EUR brevi
+
+Beta economico circa:
+0.60 + 2 * 0.20 = 1.00
+
+Questa è una struttura TAX-AWARE.
+
+Motivazione:
+
+il 60% SWDA è il core fiscale da non vendere frequentemente;
+
+LWLD controlla il beta;
+
+BOT/cash è il collateral / componente difensiva.
+
+IMPORTANTE:
+60/20/20 è una configurazione iniziale/di regime normale,
+NON un target da ribilanciare ossessivamente ogni mese.
+
+7. TRADUZIONE BETA → PESI
+
+Con core SWDA circa 60%:
+
+Beta 0.60:
+60% SWDA
+0% LWLD
+40% difensivo
+
+Beta 0.80:
+60% SWDA
+10% LWLD
+30% difensivo
+
+Beta 0.90:
+60% SWDA
+15% LWLD
+25% difensivo
+
+Beta 0.95:
+60% SWDA
+17.5% LWLD
+22.5% difensivo
+
+Beta 1.00:
+60% SWDA
+20% LWLD
+20% difensivo
+
+Beta 1.10:
+60% SWDA
+25% LWLD
+15% difensivo
+
+Beta 1.20:
+60% SWDA
+30% LWLD
+10% difensivo
+
+Non superare 1.20 nel core perpetual senza una validazione separata.
+
+Per la fase Growth/surplus si può testare beta fino a 1.35–1.50.
+
+8. DAMODARAN MONTHLY ENGINE
+
+Per il CORE PERPETUO:
+
+ERP < 3%:
+beta target circa 0.60
+
+ERP 3%–4%:
+beta target circa 0.95
+
+ERP >= 4%:
+beta target circa 1.00
+
+Questi valori devono essere sottoposti a perturbazione / walk-forward.
+
+No-trade band:
+non operare se
+|Delta beta| < 0.15
+
+Scopo:
+ridurre turnover, costi, spread e fiscal drag.
+
+9. TREASURY / TIPS VETO
+
+Il Treasury Engine NON pilota il portafoglio.
+È un veto.
+
+Esempio di regola candidata:
+
+Regime normale:
+beta max 1.00
+
+Recovery + ERP molto alto:
+beta max 1.20
+
+TIPS real yield > 90° percentile:
+beta max 1.00
+
+TIPS real yield > 95° percentile
+E
+ERP < 60° percentile:
+beta max 0.90
+
+Crisi:
+beta 0.80 o inferiore
+
+Ottimizzare queste soglie in walk-forward.
+NON ottimizzare su tutto il campione e poi dichiararle “storiche”.
+
+10. CRISIS ENGINE
+
+Segnale di deterioramento candidato:
+
+drawdown <= -5%
+AND
+momentum 3 mesi < 0
+AND
+volatilità annualizzata > 24%
+
+Quando il segnale è attivo:
+beta può essere compresso verso 0.80
+oppure, in stress più severo, 0.60.
+
+Non vendere automaticamente SWDA per raggiungere il beta.
+Usare prima:
+LWLD -> cash/BOT.
+
+11. RECOVERY ENGINE
+
+Condizioni candidate di riattivazione:
+
+ERP favorevole / elevato
+AND
+ultimo mese > 0
+AND
+momentum 3 mesi > +1%
+AND
+volatilità annualizzata < 32%
+AND
+mercato ancora sotto il massimo precedente
+
+Beta ramp:
++0.10 per mese
+
+Esempio:
+0.60 -> 0.70 -> 0.80 -> 0.90 -> 1.00 -> 1.10 -> max 1.20
+
+Scopo:
+evitare due errori:
+
+ricomprare leva nel pieno del crollo;
+
+restare troppo prudenti durante il rebound.
+
+12. MORIN–BAYES CONTROL LAYER
+
+Ruolo:
+META-CONTROLLO,
+non nuovo oscillatore.
+
+Principi operativi:
+
+nessun indicatore decide da solo;
+
+se i segnali sono in conflitto, ridurre la certezza / avvicinarsi al benchmark;
+
+misurare ex post Protection Benefit e Opportunity Cost;
+
+mantenere un Counterfactual Ledger;
+
+aggiornare affidabilità delle regole in modo bayesiano;
+
+meno di 10 episodi indipendenti => non modificare strutturalmente una regola;
+
+in fase di rendita, il Morin layer NON può rendere il core più aggressivo se il capitale reale è fragile.
+
+13. GUARDRAIL DELLA RENDITA v3.3
+
+Rendita target:
+PIR * capitale reale iniziale,
+indicizzata al CPI italiano.
+
+Guardrail candidato:
+
+Real Portfolio >= 800k:
+100% del target
+
+680k <= Real Portfolio < 800k:
+90% del target
+
+560k <= Real Portfolio < 680k:
+75% del target
+
+Real Portfolio < 560k:
+25% del target
+
+Sospensione totale per 12 mesi SOLO se:
+trailing 12m real World return <= -20%
+AND
+Real Portfolio < 600k
+
+Quindi:
+non sospendere la rendita soltanto perché il mercato è in bear market
+se il patrimonio dispone ancora di un grande buffer.
+
+14. RISERVA DI RENDITA
+
+Non fissare più 24–36 mesi come dogma.
+
+Testare:
+0 / 6 / 12 / 18 / 24 mesi
+
+Risultati preliminari precedenti:
+oltre 12 mesi il beneficio marginale era piccolo
+quando è consentita la sospensione/riduzione della rendita.
+
+Baseline candidata:
+12 mesi
+
+Su 1,600 EUR/mese:
+12 mesi = 19,200 EUR.
+
+La riserva NON deve essere ricostruita vendendo SWDA durante un drawdown severo.
+
+15. FISCALITÀ ITALIANA
+
+ETF:
+aliquota ordinaria sui proventi positivi:
+26%
+
+Principio:
+modellare le plusvalenze realizzate,
+non tassare ogni anno i rendimenti non realizzati.
+
+Costo fiscale:
+prezzo medio ponderato di carico.
+
+Le minusvalenze ETF e i redditi di capitale hanno trattamento fiscale diverso:
+modellare con prudenza.
+
+Per il modello quasi definitivo:
+almeno implementare:
+
+tax ledger EUR per SWDA;
+
+tax ledger EUR per LWLD;
+
+imposta 26% sulle plusvalenze ETF realizzate;
+
+componente governativa italiana tassata al 12.5% se implementata con titoli di Stato eleggibili.
+
+IMPORTANTE:
+la nuova architettura 60/20/20 nasce proprio per ridurre le vendite di SWDA e il tax drag.
+
+16. COSTI
+
+SWDA TER:
+0.20% annuo
+
+LWLD ongoing charge:
+0.60% annuo
+
+Fineco:
+usare commissioni reali del piano applicabile.
+Nei test precedenti è stato usato prudentemente un massimo di 19 EUR per eseguito.
+
+NON usare 0.4% per ordine.
+
+Spread / slippage:
+stressare almeno:
+5 / 10 / 20 bps per transazione,
+con differenziazione SWDA vs LWLD se possibile.
+
+Turnover:
+registrare separatamente.
+
+Funding LWLD:
+NON sottrarre due volte il costo di finanziamento
+se il benchmark/proxy leveraged lo incorpora già.
+
+17. VECCHIO MONTE CARLO: SOLO BENCHMARK DI CONFRONTO
+
+NON usare questi numeri come input del nuovo modello.
+
+Vecchio run “Recovery Engine”:
+20,000 simulazioni
+100 anni
+800,000 iniziali
+1,600/mese reali
+
+Output vecchio:
+P(ever < 400k) = 22.41%
+P(finale < 800k) = 3.75%
+P5 finale = 989k
+Mediana finale = 26.0 M
+Payout fraction = 92.94%
+
+Questi dati NON sono perfettamente riproducibili
+perché il generatore/seed originale non è stato completamente recuperato.
+
+Servono soltanto come riferimento storico.
+
+18. RISULTATI PRELIMINARI v3.2 EUR TAX-AWARE
+
+Da NON assumere come definitivi
+
+Paired bootstrap 24 mesi, stesso PIR 2.40%.
+
+Vecchio modello vs tax-aware 60/20/20:
+
+P(finale >= 800k):
+98.18% -> 98.36%
+
+P(ever < 400k):
+18.06% -> 17.36%
+
+P5 finale:
+1.50 M -> 2.83 M
+
+Mediana finale:
+27.9 M -> 108.9 M
+(ATTENZIONE: su 100 anni la mediana monetaria assoluta non è una previsione economica utile; usare soprattutto metriche relative e percentili)
+
+Payout target effettivamente distribuito:
+91.81% -> 95.64%
+
+Probabilità >5 anni ridotti in una finestra di 30 anni:
+46.94% -> 25.66%
+
+Probabilità 3 anni consecutivi a payout zero:
+16.08% -> 0.24%
+
+Imposte realizzate medie:
+forte riduzione, circa -80% nel test precedente
+
+Trading costs:
+forte riduzione, circa -84% nel test precedente
+
+Questi risultati devono essere RICALCOLATI con il proxy LWLD corretto per FX e con Treasury/TIPS veto.
+
+19. STRESS TEST PRECEDENTE SUI BLOCK LENGTH
+
+Usati:
+12 / 24 / 36 / 60 mesi
+
+PIR 2.40%:
+P(finale >= 800k):
+circa 96.9–98.6%
+
+P(ever <400k):
+circa 16.6–20.3%
+
+P5 finale:
+circa 1.34–2.57 M
+
+Payout fraction:
+circa 94.1–95.7%
+
+Probabilità 3 anni consecutivi zero:
+circa 0.04–0.37%
+
+PIR robusto provvisorio:
+circa 1.99%
+
+Con PIR ~1.99%:
+P(finale >=800k):
+circa 98.1–99.2%
+
+P(ever <400k):
+circa 13.5–17.6%
+
+P5 finale:
+circa 2.14–4.13 M
+
+Payout fraction:
+circa 95.1–96.5%
+
+Questi numeri vanno RICALCOLATI con v3.3.
+
+20. DEFINIZIONE SEVERA DI “PERPETUA”
+
+Non usare soltanto “non va a zero”.
+
+Vincoli da imporre simultaneamente:
+
+
+
+P(Terminal Real Capital >= 800,000) >= 95%
+
+
+
+P(Ever Real Capital < 400,000) <= 10%
+Obiettivo ideale.
+Se non raggiungibile senza sacrificare troppo payout,
+mostrare Pareto frontier rischio/rendita.
+
+
+
+Terminal P5 Real Capital >= 800,000
+
+
+
+Mean payout fraction >= 95%
+
+
+
+P(più di 5 anni con payout <80%
+in QUALSIASI finestra di 30 anni) <= 10%
+
+
+
+P(>=3 anni consecutivi con payout zero) <= 5%
+
+
+
+Ruin probability circa 0,
+ma NON usare questa metrica da sola.
+
+
+
+Registrare anche:
+
+longest reduced-payout streak
+
+longest zero-payout streak
+
+years to recover initial real capital after breach
+
+time below 800k
+
+time below 600k
+
+max real drawdown
+
+minimum RCCR
+
+21. MONTE CARLO / BLOCK BOOTSTRAP
+
+Baseline:
+paired monthly block bootstrap.
+
+Preservare insieme:
+
+World returns
+
+FX
+
+Italian CPI
+
+ERP regime
+
+rates
+
+TIPS when available
+
+NON campionare indipendentemente queste variabili.
+
+Block lengths:
+12 / 24 / 36 / 60 mesi.
+
+Numero simulazioni:
+minimo 20,000 per configurazione finale.
+Per ricerca parametri:
+5,000–10,000,
+poi validazione 20,000–50,000.
+
+Orizzonte:
+100 anni = 1,200 mesi.
+
+Usare stessi shock/indici bootstrap per confronti paired fra strategie.
+
+Seed:
+fissare e registrare esplicitamente.
+
+22. REGIME-CONDITIONAL BOOTSTRAP
+
+Miglioramento desiderato:
+non soltanto block bootstrap casuale.
+
+Classificare i blocchi per regime, ad esempio:
+
+ERP basso / medio / alto
+
+inflazione bassa / alta
+
+vol bassa / alta
+
+real yield basso / alto
+
+Preservare clustering e durata dei regimi.
+
+Confrontare:
+A. block bootstrap semplice
+B. block bootstrap condizionato per regime
+
+Il risultato deve essere robusto a entrambi.
+
+23. WALK-FORWARD OPTIMIZATION
+
+Fondamentale.
+
+NON calibrare le soglie sull’intero 1979-oggi.
+
+Esempio:
+
+training iniziale 1979–1999;
+
+test 2000–2004;
+
+espandere finestra;
+
+test successivo 2005–2009;
+ecc.
+
+Oppure rolling window:
+20–25 anni training
+5 anni test.
+
+Le soglie ERP/TIPS/vol/momentum devono essere stimate SOLO sui dati disponibili fino a quel momento.
+
+Registrare:
+
+out-of-sample return
+
+out-of-sample drawdown
+
+tax drag
+
+turnover
+
+payout metrics
+
+24. PARAMETER PERTURBATION
+
+Stressare almeno:
+
+ERP thresholds:
+2.8 / 3.0 / 3.2%
+3.8 / 4.0 / 4.2%
+
+Vol threshold:
+20 / 24 / 28%
+
+Momentum 3m recovery:
+0 / 1 / 2%
+
+No-trade beta band:
+0.10 / 0.15 / 0.20
+
+Core SWDA:
+50 / 60 / 70%
+
+Normal beta:
+0.90 / 1.00 / 1.10
+
+Recovery beta cap:
+1.10 / 1.20 / 1.30
+
+Reserve:
+0 / 6 / 12 / 18 / 24 mesi
+
+Guardrails:
+variazione ±5–10 punti percentuali.
+
+Se il risultato cambia drasticamente per piccole perturbazioni,
+il modello è overfit.
+
+25. OTTIMIZZAZIONE DEL PIR
+
+Non scegliere più PIR per tentativi.
+
+Problema:
+
+MAXIMIZE PIR
+
+soggetto ai vincoli di perpetuità della sezione 20.
+
+Ricerca:
+PIR da 1.0% a 4.0%
+step iniziale 0.10%
+poi raffinare 0.01% vicino al confine.
+
+Produrre:
+
+maximum feasible PIR
+
+robust PIR
+
+target PIR
+
+Pareto frontier PIR vs risk constraints
+
+26. OUTPUT RICHIESTI
+
+Per ogni strategia:
+
+PIR
+
+monthly real income
+
+P(final >= initial real capital)
+
+P(ever below 50% initial)
+
+P5 final real capital
+
+P10
+
+median
+
+P75
+
+P90
+
+max drawdown distribution
+
+mean payout fraction
+
+reduced payout years
+
+zero payout years
+
+longest reduced payout streak
+
+longest zero payout streak
+
+tax drag
+
+TER drag
+
+trading costs
+
+turnover
+
+average beta
+
+average LWLD weight
+
+average cash/BOT weight
+
+Strategie minime:
+
+100% World / SWDA benchmark
+
+Damodaran only
+
+Damodaran + Crisis/Recovery
+
+v3.3 tax-aware 60/20/20
+
+v3.3 + Treasury/TIPS veto
+
+migliore configurazione walk-forward

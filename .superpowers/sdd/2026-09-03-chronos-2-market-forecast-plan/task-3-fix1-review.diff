@@ -1,0 +1,221 @@
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-head/perpetual_engine/chronos_data.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-fix1-head/perpetual_engine/chronos_data.py"
+index cc185f2..2252b44 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-head/perpetual_engine/chronos_data.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-fix1-head/perpetual_engine/chronos_data.py"
+@@ -449,13 +449,19 @@ def _covariate_bytes(table: MonthlyTable) -> bytes:
+     return output.getvalue().encode("utf-8")
+ 
+ 
+-def _vintage_identity(config_hash: str, sources: Iterable[Mapping[str, str]], covariates_hash: str) -> dict[str, Any]:
++def _vintage_identity(
++    config_hash: str,
++    sources: Iterable[Mapping[str, str]],
++    raw_files_hashes: Mapping[str, str],
++    covariates_hash: str,
++) -> dict[str, Any]:
+     return {
+         "config_hash": config_hash,
+         "sources": [
+             {"id": source["id"], "url": source["url"], "sha256": source["sha256"]}
+             for source in sources
+         ],
++        "raw_files_sha256": dict(sorted(raw_files_hashes.items())),
+         "availability": _AVAILABILITY,
+         "covariates_sha256": covariates_hash,
+     }
+@@ -484,16 +490,42 @@ def _contained_file(root: Path, relative: Any, name: str) -> Path:
+     return path
+ 
+ 
+-def _load_vintage(config: ChronosConfig, vintage: Path, vintage_id: str) -> MonthlyTable:
++def _raw_file_hashes(vintage: Path) -> dict[str, str]:
++    raw_root = (vintage / "raw").resolve()
++    if not raw_root.is_relative_to(vintage.resolve()) or not raw_root.is_dir():
++        raise ValueError("raw files path escapes its vintage or is missing")
++    hashes: dict[str, str] = {}
++    for path in sorted(raw_root.rglob("*"), key=lambda item: item.as_posix()):
++        if not path.is_file():
++            continue
++        resolved = path.resolve()
++        if not resolved.is_relative_to(raw_root):
++            raise ValueError("raw files path escapes its vintage")
++        hashes[path.relative_to(vintage).as_posix()] = sha256_file(resolved)
++    if not hashes:
++        raise ValueError("raw files are missing")
++    return hashes
++
++
++def _load_vintage(
++    config: ChronosConfig,
++    vintage: Path,
++    vintage_id: str,
++    *,
++    staging_root: Path | None = None,
++) -> MonthlyTable:
+     if not _is_sha256(vintage_id):
+         raise ValueError("vintage ID is invalid")
+     vintages_root = (config.data_root / "vintages").resolve()
+     vintage = vintage.resolve()
+-    if not vintage.is_relative_to(vintages_root) and vintage.parent.name != ".staging":
+-        raise ValueError("vintage path escapes the configured data root")
++    allowed_root = vintages_root if staging_root is None else staging_root.resolve()
++    if not allowed_root.is_relative_to(config.data_root.resolve()):
++        raise ValueError("staging path escapes the configured data root")
++    if not vintage.is_relative_to(allowed_root):
++        raise ValueError("vintage path escapes the configured data root or staging directory")
+     manifest_path = vintage / "manifest.json"
+     manifest = _json_object(manifest_path, "vintage manifest")
+-    if set(manifest) != {"schema_version", "vintage_id", "config_hash", "sources", "availability", "generated_sha256"}:
++    if set(manifest) != {"schema_version", "vintage_id", "config_hash", "sources", "raw_files_sha256", "availability", "generated_sha256"}:
+         raise ValueError("vintage manifest schema is invalid")
+     if manifest.get("schema_version") != "CHRONOS_VINTAGE_V1":
+         raise ValueError("vintage manifest schema is invalid")
+@@ -513,6 +545,12 @@ def _load_vintage(config: ChronosConfig, vintage: Path, vintage_id: str) -> Mont
+         if raw_path in raw_paths or sha256_file(raw_path) != record["sha256"]:
+             raise ValueError("raw hash does not match")
+         raw_paths.add(raw_path)
++    recorded_raw_files = manifest.get("raw_files_sha256")
++    if not isinstance(recorded_raw_files, dict) or any(
++        not isinstance(path, str) or not _is_sha256(file_hash)
++        for path, file_hash in recorded_raw_files.items()
++    ) or recorded_raw_files != _raw_file_hashes(vintage):
++        raise ValueError("raw files or raw metadata hash does not match")
+     if manifest.get("availability") != _AVAILABILITY:
+         raise ValueError("vintage availability identity is invalid")
+     generated = manifest.get("generated_sha256")
+@@ -521,7 +559,7 @@ def _load_vintage(config: ChronosConfig, vintage: Path, vintage_id: str) -> Mont
+     covariate_path = _contained_file(vintage, "covariates.csv", "normalized covariates")
+     if sha256_file(covariate_path) != generated["covariates.csv"]:
+         raise ValueError("normalized hash does not match")
+-    identity = _vintage_identity(config.config_hash, sources, generated["covariates.csv"])
++    identity = _vintage_identity(config.config_hash, sources, recorded_raw_files, generated["covariates.csv"])
+     computed_id = hashlib.sha256(canonical_json(identity)).hexdigest()
+     if manifest.get("vintage_id") != vintage_id or computed_id != vintage_id:
+         raise ValueError("vintage ID does not match its immutable identity")
+@@ -582,9 +620,15 @@ def refresh_chronos_data(
+     if not config.data_root.resolve().is_relative_to(config.project_root):
+         raise ValueError("data root escapes project root")
+     config.data_root.mkdir(parents=True, exist_ok=True)
+-    staging_root = config.data_root / ".staging"
+-    staging_root.mkdir(exist_ok=True)
++    data_root = config.data_root.resolve()
++    staging_path = config.data_root / ".staging"
++    staging_path.mkdir(exist_ok=True)
++    staging_root = staging_path.resolve()
++    if not staging_root.is_relative_to(data_root):
++        raise ValueError("staging path escapes the configured data root")
+     stage = Path(tempfile.mkdtemp(prefix="refresh-", dir=staging_root)).resolve()
++    if not stage.is_relative_to(staging_root):
++        raise ValueError("refresh staging directory escapes the configured data root")
+     published: Path | None = None
+     try:
+         source_rows: dict[str, tuple[ObservationRow, ...]] = {}
+@@ -606,22 +650,27 @@ def refresh_chronos_data(
+         table = normalize_covariates(config, targets.months, source_rows)
+         normalized = _covariate_bytes(table)
+         normalized_hash = hashlib.sha256(normalized).hexdigest()
+-        identity = _vintage_identity(config.config_hash, records, normalized_hash)
++        raw_files_hashes = _raw_file_hashes(stage)
++        identity = _vintage_identity(config.config_hash, records, raw_files_hashes, normalized_hash)
+         vintage_id = hashlib.sha256(canonical_json(identity)).hexdigest()
+         manifest = {
+             "schema_version": "CHRONOS_VINTAGE_V1",
+             "vintage_id": vintage_id,
+             "config_hash": config.config_hash,
+             "sources": records,
++            "raw_files_sha256": raw_files_hashes,
+             "availability": _AVAILABILITY,
+             "generated_sha256": {"covariates.csv": normalized_hash},
+         }
+         manifest_bytes = canonical_json(manifest)
+         (stage / "covariates.csv").write_bytes(normalized)
+         (stage / "manifest.json").write_bytes(manifest_bytes)
+-        _load_vintage(config, stage, vintage_id)
+-        vintages = config.data_root / "vintages"
+-        vintages.mkdir(exist_ok=True)
++        _load_vintage(config, stage, vintage_id, staging_root=staging_root)
++        vintages_path = config.data_root / "vintages"
++        vintages_path.mkdir(exist_ok=True)
++        vintages = vintages_path.resolve()
++        if not vintages.is_relative_to(data_root):
++            raise ValueError("vintages path escapes the configured data root")
+         destination = vintages / vintage_id
+         if destination.exists():
+             _load_vintage(config, destination, vintage_id)
+@@ -658,8 +707,11 @@ def load_covariate_table(config: ChronosConfig) -> tuple[MonthlyTable, str]:
+     vintage_id = pointer.get("vintage_id")
+     if not _is_sha256(vintage_id):
+         raise ValueError("vintage ID is invalid")
+-    vintage = (data_root / "vintages" / vintage_id).resolve()
+-    if not vintage.is_relative_to((data_root / "vintages").resolve()):
++    vintages_root = (data_root / "vintages").resolve()
++    if not vintages_root.is_relative_to(data_root):
++        raise ValueError("vintages path escapes the configured data root")
++    vintage = (vintages_root / vintage_id).resolve()
++    if not vintage.is_relative_to(vintages_root):
+         raise ValueError("vintage path escapes the configured data root")
+     manifest_path = vintage / "manifest.json"
+     expected_manifest_hash = pointer.get("manifest_sha256")
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-head/tests/test_chronos.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-fix1-head/tests/test_chronos.py"
+index d314506..1e7ecd9 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-head/tests/test_chronos.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-3-fix1-head/tests/test_chronos.py"
+@@ -7,7 +7,7 @@ import tempfile
+ import unittest
+ import zipfile
+ from dataclasses import replace
+-from datetime import date, datetime, timezone
++from datetime import date, datetime, timedelta, timezone
+ from decimal import Decimal
+ from pathlib import Path
+ from unittest.mock import patch
+@@ -481,6 +481,41 @@ class ChronosRefreshTests(unittest.TestCase):
+         self.assertEqual(table.values.shape, (5, 2))
+         self.assertFalse(table.values.flags.writeable)
+ 
++    def test_refresh_identity_binds_retrieval_metadata(self):
++        from perpetual_engine.chronos_data import refresh_chronos_data
++
++        first = refresh_chronos_data(self.config_path, fetcher=self.payloads.__getitem__, retrieved_at=self.at)
++        later = refresh_chronos_data(
++            self.config_path,
++            fetcher=self.payloads.__getitem__,
++            retrieved_at=self.at + timedelta(seconds=1),
++        )
++
++        self.assertNotEqual(later, first)
++
++    def test_offline_load_rejects_corrupt_raw_metadata(self):
++        from perpetual_engine.chronos_data import load_chronos_config, load_covariate_table, refresh_chronos_data
++
++        vintage_id = refresh_chronos_data(self.config_path, fetcher=self.payloads.__getitem__, retrieved_at=self.at)
++        config = load_chronos_config(self.config_path)
++        vintage = config.data_root / "vintages" / vintage_id
++        metadata = next(path for path in (vintage / "raw").rglob("*.json"))
++        metadata.write_bytes(metadata.read_bytes() + b"corrupt")
++
++        with self.assertRaisesRegex(ValueError, "raw metadata|raw files"):
++            load_covariate_table(config)
++
++    def test_staging_validation_rejects_an_unrelated_dot_staging_directory(self):
++        from perpetual_engine.chronos_data import _load_vintage, load_chronos_config, refresh_chronos_data
++
++        vintage_id = refresh_chronos_data(self.config_path, fetcher=self.payloads.__getitem__, retrieved_at=self.at)
++        config = load_chronos_config(self.config_path)
++        outside = self.root / "outside" / ".staging" / vintage_id
++        shutil.copytree(config.data_root / "vintages" / vintage_id, outside)
++
++        with self.assertRaisesRegex(ValueError, "staging|escapes"):
++            _load_vintage(config, outside, vintage_id)
++
+     def test_refresh_is_atomic_when_fifth_source_or_pointer_fails(self):
+         from perpetual_engine.chronos_data import refresh_chronos_data
+ 
+@@ -577,6 +612,7 @@ class ChronosRefreshTests(unittest.TestCase):
+                         {"id": source["id"], "url": source["url"], "sha256": source["sha256"]}
+                         for source in manifest["sources"]
+                     ],
++                    "raw_files_sha256": manifest["raw_files_sha256"],
+                     "availability": availability,
+                     "covariates_sha256": normalized_hash,
+                 }

@@ -1,0 +1,875 @@
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-base\\perpetual_engine\\chronos.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-head\\perpetual_engine\\chronos.py"
+index 4281cc9..55d2f14 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-base\\perpetual_engine\\chronos.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-head\\perpetual_engine\\chronos.py"
+@@ -21,6 +21,7 @@ from perpetual_engine.chronos_data import (
+     REQUIRED_V1_COVARIATES,
+     load_chronos_config,
+     load_covariate_table,
++    load_covariate_vintage,
+     load_target_snapshot,
+     load_target_table,
+ )
+@@ -182,10 +183,15 @@ def load_chronos_predictor(config: ChronosConfig) -> Callable:
+ def run_scenario_forecasts(
+     config: ChronosConfig,
+     predictor: Callable | None = None,
++    *,
++    tables: tuple[MonthlyTable, MonthlyTable] | None = None,
+ ) -> tuple[ForecastRow, ...]:
+     _require_v1(config)
+-    targets = load_target_table(config)
+-    covariates, _vintage_id = load_covariate_table(config)
++    if tables is None:
++        targets = load_target_table(config)
++        covariates, _vintage_id = load_covariate_table(config)
++    else:
++        targets, covariates = tables
+     origin, _target_values, covariate_values = _aligned_values(targets, covariates)
+     last_rate = float(covariate_values[REQUIRED_V1_COVARIATES.index("ECB_DFR"), -1])
+     items = build_forecast_inputs(
+@@ -648,8 +654,20 @@ def _scenario_sensitivity_bytes(rows: Iterable[ForecastRow | IssuedForecastRow])
+     ))
+ 
+ 
+-def _atomic_snapshot(destination: Path, staging_root: Path, files: Mapping[str, bytes], label: str) -> Path:
+-    if destination.exists() and not destination.is_dir():
++def _atomic_snapshot(
++    destination: Path,
++    staging_root: Path,
++    files: Mapping[str, bytes],
++    label: str,
++    *,
++    precommit: Callable[[], None] | None = None,
++) -> Path:
++    destination_parent = destination.parent.resolve()
++    staging_root = staging_root.resolve()
++    destination_parent_existed = destination_parent.exists()
++    if destination.exists() and (
++        not destination.is_dir() or destination.resolve().parent != destination_parent
++    ):
+         raise ValueError(f"{label} collision")
+     try:
+         destination.parent.mkdir(parents=True, exist_ok=True)
+@@ -657,6 +675,8 @@ def _atomic_snapshot(destination: Path, staging_root: Path, files: Mapping[str,
+     except OSError as error:
+         raise ValueError(f"{label} ancestor collision") from error
+     stage = Path(tempfile.mkdtemp(prefix=f"{label}-", dir=staging_root)).resolve()
++    if stage.parent != staging_root:
++        raise ValueError(f"{label} staging path escapes staging root")
+     try:
+         for name, payload in files.items():
+             (stage / name).write_bytes(payload)
+@@ -677,13 +697,19 @@ def _atomic_snapshot(destination: Path, staging_root: Path, files: Mapping[str,
+             staged = {path.name: path.read_bytes() for path in stage.iterdir() if path.is_file()}
+             if current != staged or len(tuple(destination.iterdir())) != len(current):
+                 raise ValueError(f"{label} collision")
++            if precommit is not None:
++                precommit()
+             shutil.rmtree(stage)
+             return destination
++        if precommit is not None:
++            precommit()
+         stage.replace(destination)
+         return destination
+     except Exception:
+         if stage.exists() and stage.is_relative_to(staging_root.resolve()):
+             shutil.rmtree(stage)
++        if not destination_parent_existed and destination_parent.is_dir() and not any(destination_parent.iterdir()):
++            destination_parent.rmdir()
+         raise
+ 
+ 
+@@ -697,6 +723,13 @@ def _parse_utc(value: object, label: str) -> datetime:
+     return parsed
+ 
+ 
++def _chronos_package_version() -> str:
++    try:
++        return version("chronos-forecasting")
++    except PackageNotFoundError:
++        return "unavailable"
++
++
+ def _forecast_manifest(
+     config: ChronosConfig,
+     identifier: str,
+@@ -708,10 +741,6 @@ def _forecast_manifest(
+     vintage_id: str,
+     generated_hashes: Mapping[str, str],
+ ) -> dict[str, object]:
+-    try:
+-        package_version = version("chronos-forecasting")
+-    except PackageNotFoundError:
+-        package_version = "unavailable"
+     return {
+         "schema_version": "CHRONOS_FORECAST_V1",
+         "forecast_id": identifier,
+@@ -721,7 +750,7 @@ def _forecast_manifest(
+             "id": config.model_id,
+             "revision": config.model_revision,
+             "package": "chronos-forecasting",
+-            "package_version": package_version,
++            "package_version": _chronos_package_version(),
+             "device": config.device,
+         },
+         "scenarios": {name: values.tolist() for name, values in scenarios.items()},
+@@ -737,15 +766,36 @@ def _forecast_manifest(
+     }
+ 
+ 
+-def _read_forecast_archive(path: Path, config: ChronosConfig) -> tuple[tuple[IssuedForecastRow, ...], str]:
+-    if not path.is_dir() or not _is_sha256(path.name):
++def _read_forecast_archive(
++    path: Path,
++    forecast_root: Path,
++    config: ChronosConfig,
++) -> tuple[tuple[IssuedForecastRow, ...], str]:
++    archive_id = path.name
++    forecast_root = forecast_root.resolve()
++    resolved = path.resolve()
++    if (
++        not path.is_dir()
++        or not _is_sha256(archive_id)
++        or resolved.parent != forecast_root
++        or resolved.name != archive_id
++    ):
++        if _is_sha256(archive_id):
++            raise ValueError("forecast archive path escapes forecast root")
+         raise ValueError("unexpected forecast archive child")
+     expected_files = {"forecast.csv", "scenario_sensitivity.csv", "manifest.json"}
+-    if {item.name for item in path.iterdir()} != expected_files or not all((path / name).is_file() for name in expected_files):
++    children = {item.name: item for item in resolved.iterdir()}
++    if set(children) != expected_files:
+         raise ValueError("forecast archive has unexpected files")
+-    manifest_path = path / "manifest.json"
++    resolved_files = {}
++    for name, child in children.items():
++        resolved_child = child.resolve()
++        if not child.is_file() or resolved_child.parent != resolved:
++            raise ValueError("forecast archive file escapes archive root")
++        resolved_files[name] = resolved_child
+     try:
+-        manifest_bytes = manifest_path.read_bytes()
++        file_bytes = {name: resolved_files[name].read_bytes() for name in expected_files}
++        manifest_bytes = file_bytes["manifest.json"]
+         manifest = json.loads(manifest_bytes.decode("utf-8"))
+     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+         raise ValueError("forecast manifest is malformed") from error
+@@ -755,22 +805,26 @@ def _read_forecast_archive(path: Path, config: ChronosConfig) -> tuple[tuple[Iss
+     }
+     if not isinstance(manifest, dict) or set(manifest) != required or manifest.get("schema_version") != "CHRONOS_FORECAST_V1":
+         raise ValueError("forecast manifest schema is invalid")
+-    if manifest.get("forecast_id") != path.name:
++    if manifest.get("forecast_id") != archive_id:
+         raise ValueError("forecast identity/path mismatch")
+     generated = manifest.get("generated_sha256")
+     if not isinstance(generated, dict) or set(generated) != {"forecast.csv", "scenario_sensitivity.csv"}:
+         raise ValueError("forecast generated hashes are invalid")
+     for name, digest in generated.items():
+-        if not _is_sha256(digest) or sha256_file(path / name) != digest:
++        if not _is_sha256(digest) or hashlib.sha256(file_bytes[name]).hexdigest() != digest:
+             raise ValueError("forecast generated hash mismatch")
+     model = manifest.get("model")
+     labels = manifest.get("labels")
+     scenarios = manifest.get("scenarios")
+     if (
+         not isinstance(model, dict)
+-        or set(model) != {"id", "revision", "package", "package_version", "device"}
+-        or model.get("id") != config.model_id
+-        or model.get("package") != "chronos-forecasting"
++        or model != {
++            "id": config.model_id,
++            "revision": config.model_revision,
++            "package": "chronos-forecasting",
++            "package_version": _chronos_package_version(),
++            "device": config.device,
++        }
+         or labels != {"forecast": "PROSPECTIVE_SCENARIO_FORECAST", "target_history": "RETROSPECTIVE_INPUT_ONLY"}
+         or not isinstance(scenarios, dict)
+         or set(scenarios) != set(SCENARIO_NAMES)
+@@ -784,8 +838,13 @@ def _read_forecast_archive(path: Path, config: ChronosConfig) -> tuple[tuple[Iss
+         raise ValueError("forecast manifest values are invalid") from error
+     if any(values.shape != (12,) or not np.isfinite(values).all() for values in scenario_arrays.values()):
+         raise ValueError("forecast scenario definitions are invalid")
+-    base = scenario_arrays["ECB_FLAT"]
+-    expected_scenarios = ecb_scenarios(float(base[0]), config.scenario_basis_points, config.prediction_length)
++    vintage = load_covariate_vintage(config, manifest["vintage_id"])
++    try:
++        origin_index = vintage.months.index(origin)
++    except ValueError as error:
++        raise ValueError("forecast origin is missing from bound vintage") from error
++    vintage_rate = float(vintage.values[REQUIRED_V1_COVARIATES.index("ECB_DFR"), origin_index])
++    expected_scenarios = ecb_scenarios(vintage_rate, config.scenario_basis_points, config.prediction_length)
+     if any(not np.array_equal(scenario_arrays[name], expected_scenarios[name]) for name in SCENARIO_NAMES):
+         raise ValueError("forecast scenario definitions are invalid")
+     try:
+@@ -795,17 +854,20 @@ def _read_forecast_archive(path: Path, config: ChronosConfig) -> tuple[tuple[Iss
+         )
+     except (KeyError, TypeError, ValueError) as error:
+         raise ValueError("forecast identity is invalid") from error
+-    if expected_id != path.name or not _is_sha256(manifest.get("target_manifest_sha256")):
++    if expected_id != archive_id or not _is_sha256(manifest.get("target_manifest_sha256")):
+         raise ValueError("forecast identity/path mismatch")
+ 
+     try:
+-        text = (path / "forecast.csv").read_text(encoding="utf-8")
++        text = file_bytes["forecast.csv"].decode("utf-8")
+         reader = csv.DictReader(io.StringIO(text, newline=""))
+-        if tuple(reader.fieldnames or ()) != ("scenario", "target", "forecast_month", "horizon", "q10", "q50", "q90"):
++        fields = ("scenario", "target", "forecast_month", "horizon", "q10", "q50", "q90")
++        if tuple(reader.fieldnames or ()) != fields:
+             raise ValueError("forecast CSV header is invalid")
+         issued_rows = []
+         keys = set()
+         for raw in reader:
++            if None in raw or set(raw) != set(fields):
++                raise ValueError("forecast CSV row has extra or missing fields")
+             scenario, target = raw["scenario"], raw["target"]
+             forecast_month = date.fromisoformat(raw["forecast_month"])
+             horizon = int(raw["horizon"])
+@@ -823,7 +885,7 @@ def _read_forecast_archive(path: Path, config: ChronosConfig) -> tuple[tuple[Iss
+                 raise ValueError("forecast CSV row is invalid or duplicate")
+             keys.add(key)
+             issued_rows.append(IssuedForecastRow(
+-                path.name, issued_at, origin, scenario, target, forecast_month, horizon, *quantiles
++                archive_id, issued_at, origin, scenario, target, forecast_month, horizon, *quantiles
+             ))
+     except (KeyError, OSError, UnicodeDecodeError, TypeError, ValueError) as error:
+         if isinstance(error, ValueError) and str(error).startswith("forecast CSV"):
+@@ -831,7 +893,7 @@ def _read_forecast_archive(path: Path, config: ChronosConfig) -> tuple[tuple[Iss
+         raise ValueError("forecast CSV is malformed") from error
+     if len(issued_rows) != 144:
+         raise ValueError("forecast CSV must contain exactly 144 unique rows")
+-    if (path / "scenario_sensitivity.csv").read_bytes() != _scenario_sensitivity_bytes(issued_rows):
++    if file_bytes["scenario_sensitivity.csv"] != _scenario_sensitivity_bytes(issued_rows):
+         raise ValueError("forecast scenario sensitivity does not match forecast rows")
+     return tuple(issued_rows), hashlib.sha256(manifest_bytes).hexdigest()
+ 
+@@ -839,17 +901,106 @@ def _read_forecast_archive(path: Path, config: ChronosConfig) -> tuple[tuple[Iss
+ def _scan_forecasts(forecast_root: Path, config: ChronosConfig) -> tuple[tuple[IssuedForecastRow, ...], tuple[str, ...], tuple[str, ...]]:
+     if not forecast_root.exists():
+         return (), (), ()
+-    if not forecast_root.is_dir():
++    forecast_root = forecast_root.resolve()
++    if not forecast_root.is_dir() or not forecast_root.is_relative_to(config.project_root.resolve()):
+         raise ValueError("forecast root collision")
+     rows: list[IssuedForecastRow] = []
+     manifest_hashes = []
+     forecast_ids = []
+     for child in sorted(forecast_root.iterdir(), key=lambda item: item.name):
+-        archive_rows, manifest_hash = _read_forecast_archive(child, config)
++        archive_rows, manifest_hash = _read_forecast_archive(child, forecast_root, config)
+         rows.extend(archive_rows)
+         manifest_hashes.append(manifest_hash)
+         forecast_ids.append(child.name)
+-    return tuple(rows), tuple(sorted(manifest_hashes)), tuple(forecast_ids)
++    return tuple(rows), tuple(manifest_hashes), tuple(forecast_ids)
++
++
++def _read_monitoring_manifest(path: Path, monitoring_root: Path) -> dict[str, object]:
++    snapshot_id = path.name
++    resolved = path.resolve()
++    monitoring_root = monitoring_root.resolve()
++    if not _is_sha256(snapshot_id) or not path.is_dir() or resolved.parent != monitoring_root:
++        raise ValueError("monitoring anchor path escapes monitoring root")
++    expected_files = {"forecast_vs_actual.csv", "pending_forecasts.csv", "live_metrics.csv", "manifest.json"}
++    children = {child.name: child for child in resolved.iterdir()}
++    if set(children) != expected_files:
++        raise ValueError("monitoring anchor has unexpected files")
++    resolved_files = {}
++    for name, child in children.items():
++        resolved_child = child.resolve()
++        if not child.is_file() or resolved_child.parent != resolved:
++            raise ValueError("monitoring anchor file escapes snapshot root")
++        resolved_files[name] = resolved_child
++    try:
++        payloads = {name: resolved_files[name].read_bytes() for name in expected_files}
++        manifest = json.loads(payloads["manifest.json"].decode("utf-8"))
++    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
++        raise ValueError("monitoring anchor manifest is malformed") from error
++    required = {
++        "schema_version", "monitoring_id", "label", "target_csv_sha256", "target_manifest_sha256",
++        "included_forecast_manifest_sha256", "forecast_ids", "generated_sha256",
++    }
++    if (
++        not isinstance(manifest, dict)
++        or set(manifest) != required
++        or manifest.get("schema_version") != "CHRONOS_MONITORING_V1"
++        or manifest.get("monitoring_id") != snapshot_id
++        or manifest.get("label") != "PROSPECTIVE_TRACK_RECORD"
++    ):
++        raise ValueError("monitoring anchor manifest is invalid")
++    included = manifest.get("included_forecast_manifest_sha256")
++    forecast_ids = manifest.get("forecast_ids")
++    generated = manifest.get("generated_sha256")
++    if (
++        not isinstance(included, list)
++        or included != sorted(included)
++        or not all(_is_sha256(item) for item in included)
++        or not isinstance(forecast_ids, list)
++        or len(forecast_ids) != len(set(forecast_ids))
++        or not all(_is_sha256(item) for item in forecast_ids)
++        or not isinstance(generated, dict)
++        or set(generated) != expected_files - {"manifest.json"}
++    ):
++        raise ValueError("monitoring anchor contents are invalid")
++    for name, digest in generated.items():
++        if not _is_sha256(digest) or hashlib.sha256(payloads[name]).hexdigest() != digest:
++            raise ValueError("monitoring anchor generated hash mismatch")
++    target_hash = manifest.get("target_csv_sha256")
++    target_manifest_hash = manifest.get("target_manifest_sha256")
++    if not _is_sha256(target_hash) or not _is_sha256(target_manifest_hash):
++        raise ValueError("monitoring anchor target hashes are invalid")
++    identity = {
++        "target_data_hash": target_hash,
++        "target_manifest_hash": target_manifest_hash,
++        "forecast_manifest_hashes": included,
++    }
++    if hashlib.sha256(canonical_json(identity)).hexdigest() != snapshot_id:
++        raise ValueError("monitoring anchor identity mismatch")
++    return manifest
++
++
++def _require_forecast_anchor(
++    monitoring_root: Path,
++    forecast_identifier: str,
++    forecast_manifest_hash: str,
++) -> None:
++    if not monitoring_root.exists() or not monitoring_root.is_dir():
++        raise ValueError("existing forecast issued_at has no monitoring anchor")
++    monitoring_root = monitoring_root.resolve()
++    anchored = False
++    for child in sorted(monitoring_root.iterdir(), key=lambda item: item.name):
++        if child.name == ".staging":
++            if not child.is_dir() or child.resolve().parent != monitoring_root:
++                raise ValueError("monitoring staging path escapes monitoring root")
++            continue
++        manifest = _read_monitoring_manifest(child, monitoring_root)
++        if (
++            forecast_identifier in manifest["forecast_ids"]
++            and forecast_manifest_hash in manifest["included_forecast_manifest_sha256"]
++        ):
++            anchored = True
++    if not anchored:
++        raise ValueError("existing forecast issued_at is not anchored by prior monitoring")
+ 
+ 
+ def publish_forecast(
+@@ -863,26 +1014,22 @@ def publish_forecast(
+     _require_v1(config)
+     output_root = _safe_project_path(output_root, config, "forecast output")
+     issued_at = _parse_utc(issued_at or datetime.now(timezone.utc), "issued_at")
+-    forecast_root = output_root / "forecasts"
+-    _scan_forecasts(forecast_root, config)
++    requested_forecast_root = output_root / "forecasts"
++    forecast_root = requested_forecast_root.resolve()
++    if forecast_root.parent != output_root:
++        raise ValueError("forecast root escapes requested output root")
++    archived_rows, archived_hashes, archived_ids = _scan_forecasts(forecast_root, config)
++    archive_hash_by_id = dict(zip(archived_ids, archived_hashes))
++    for archived_id, archived_hash in zip(archived_ids, archived_hashes):
++        _require_forecast_anchor(output_root / "monitoring", archived_id, archived_hash)
+ 
+     targets, target_hash, target_manifest_hash = load_target_snapshot(config)
+     covariates, vintage_id = load_covariate_table(config)
+     origin, _target_values, covariate_values = _aligned_values(targets, covariates)
+     identifier = forecast_id(config, target_hash, vintage_id, origin)
+-    rows = run_scenario_forecasts(config, predictor)
++    rows = run_scenario_forecasts(config, predictor, tables=(targets, covariates))
+     if len(rows) != 144 or any(row.origin != origin for row in rows):
+         raise ValueError("forecast rows do not match the bound origin")
+-    try:
+-        unchanged = (
+-            sha256_file(config.target_csv) == target_hash
+-            and sha256_file(config.target_manifest) == target_manifest_hash
+-            and load_covariate_table(config)[1] == vintage_id
+-        )
+-    except OSError as error:
+-        raise ValueError("target inputs changed during forecast") from error
+-    if not unchanged:
+-        raise ValueError("target or covariate inputs changed during forecast")
+ 
+     scenarios = ecb_scenarios(float(covariate_values[0, -1]), config.scenario_basis_points, config.prediction_length)
+     forecast_payload = _csv_bytes([
+@@ -903,7 +1050,9 @@ def publish_forecast(
+     destination = forecast_root / identifier
+     first_issued_at = issued_at
+     if destination.exists():
+-        existing_rows, _manifest_hash = _read_forecast_archive(destination, config)
++        existing_rows = tuple(row for row in archived_rows if row.forecast_id == identifier)
++        if len(existing_rows) != 144 or identifier not in archive_hash_by_id:
++            raise ValueError("existing forecast archive is ambiguous")
+         first_issued_at = existing_rows[0].issued_at
+     manifest = _forecast_manifest(
+         config, identifier, first_issued_at, origin, scenarios, target_hash, target_manifest_hash,
+@@ -912,8 +1061,35 @@ def publish_forecast(
+     staging_root = (output_root / ".staging").resolve()
+     if not staging_root.is_relative_to(output_root):
+         raise ValueError("forecast staging path escapes output root")
+-    _atomic_snapshot(destination, staging_root, {**csv_files, "manifest.json": canonical_json(manifest)}, "forecast")
+-    reconcile_forecasts(config_path, forecast_root, output_root / "monitoring")
++    files = {**csv_files, "manifest.json": canonical_json(manifest)}
++
++    def inputs_unchanged() -> None:
++        try:
++            unchanged = (
++                sha256_file(config.target_csv) == target_hash
++                and sha256_file(config.target_manifest) == target_manifest_hash
++                and load_covariate_table(config)[1] == vintage_id
++            )
++        except OSError as error:
++            raise ValueError("target inputs changed during forecast") from error
++        if not unchanged:
++            raise ValueError("target or covariate inputs changed during forecast")
++
++    was_existing = destination.exists()
++    _atomic_snapshot(destination, staging_root, files, "forecast", precommit=inputs_unchanged)
++    try:
++        reconcile_forecasts(
++            config_path,
++            forecast_root,
++            output_root / "monitoring",
++            _new_forecast_id=identifier if not was_existing else None,
++        )
++    except Exception:
++        if not was_existing and destination.is_dir():
++            current = {path.name: path.read_bytes() for path in destination.iterdir() if path.is_file()}
++            if current == files and len(tuple(destination.iterdir())) == len(files):
++                shutil.rmtree(destination)
++        raise
+     return identifier
+ 
+ 
+@@ -983,12 +1159,23 @@ def _metric_rows(rows: tuple[ReconciledRow, ...]) -> list[dict[str, object]]:
+     return metrics
+ 
+ 
+-def reconcile_forecasts(config_path: Path, forecast_root: Path, output: Path) -> str:
++def reconcile_forecasts(
++    config_path: Path,
++    forecast_root: Path,
++    output: Path,
++    *,
++    _new_forecast_id: str | None = None,
++) -> str:
+     config = load_chronos_config(config_path)
+     _require_v1(config)
+     forecast_root = _safe_project_path(forecast_root, config, "forecast root")
+     output = _safe_project_path(output, config, "monitoring output")
+     forecasts, manifest_hashes, forecast_ids = _scan_forecasts(forecast_root, config)
++    anchor_root = forecast_root.parent / "monitoring"
++    for archived_id, archived_hash in zip(forecast_ids, manifest_hashes):
++        if archived_id != _new_forecast_id:
++            _require_forecast_anchor(anchor_root, archived_id, archived_hash)
++    manifest_hashes = tuple(sorted(manifest_hashes))
+     targets, target_hash, target_manifest_hash = load_target_snapshot(config)
+     if targets.names != _TARGETS or targets.values.shape != (4, len(targets.months)):
+         raise ValueError("target snapshot is invalid")
+@@ -1066,19 +1253,26 @@ def reconcile_forecasts(config_path: Path, forecast_root: Path, output: Path) ->
+         "forecast_ids": list(forecast_ids),
+         "generated_sha256": generated_hashes,
+     }
+-    try:
+-        unchanged = sha256_file(config.target_csv) == target_hash and sha256_file(config.target_manifest) == target_manifest_hash
+-    except OSError as error:
+-        raise ValueError("target inputs changed during reconciliation") from error
+-    if not unchanged:
+-        raise ValueError("target inputs changed during reconciliation")
+     staging_root = (output / ".staging").resolve()
+     if not staging_root.is_relative_to(output):
+         raise ValueError("monitoring staging path escapes output root")
++
++    def inputs_unchanged() -> None:
++        try:
++            unchanged = (
++                sha256_file(config.target_csv) == target_hash
++                and sha256_file(config.target_manifest) == target_manifest_hash
++            )
++        except OSError as error:
++            raise ValueError("target inputs changed during reconciliation") from error
++        if not unchanged:
++            raise ValueError("target inputs changed during reconciliation")
++
+     _atomic_snapshot(
+         output / monitoring_id,
+         staging_root,
+         {**csv_files, "manifest.json": canonical_json(manifest)},
+         "monitoring",
++        precommit=inputs_unchanged,
+     )
+     return monitoring_id
+
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-base\\perpetual_engine\\chronos_data.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-head\\perpetual_engine\\chronos_data.py"
+index 8994347..c6b4899 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-base\\perpetual_engine\\chronos_data.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-head\\perpetual_engine\\chronos_data.py"
+@@ -703,6 +703,21 @@ def refresh_chronos_data(
+             shutil.rmtree(stage)
+ 
+ 
++def load_covariate_vintage(config: ChronosConfig, vintage_id: str) -> MonthlyTable:
++    data_root = config.data_root.resolve()
++    if not data_root.is_relative_to(config.project_root.resolve()):
++        raise ValueError("data root escapes project root")
++    if not _is_sha256(vintage_id):
++        raise ValueError("vintage ID is invalid")
++    vintages_root = (data_root / "vintages").resolve()
++    if not vintages_root.is_relative_to(data_root):
++        raise ValueError("vintages path escapes the configured data root")
++    vintage = (vintages_root / vintage_id).resolve()
++    if not vintage.is_relative_to(vintages_root) or vintage.parent != vintages_root:
++        raise ValueError("vintage path escapes the configured data root")
++    return _load_vintage(config, vintage, vintage_id)
++
++
+ def load_covariate_table(config: ChronosConfig) -> tuple[MonthlyTable, str]:
+     data_root = config.data_root.resolve()
+     if not data_root.is_relative_to(config.project_root.resolve()):
+@@ -718,10 +733,10 @@ def load_covariate_table(config: ChronosConfig) -> tuple[MonthlyTable, str]:
+     if not vintages_root.is_relative_to(data_root):
+         raise ValueError("vintages path escapes the configured data root")
+     vintage = (vintages_root / vintage_id).resolve()
+-    if not vintage.is_relative_to(vintages_root):
++    if not vintage.is_relative_to(vintages_root) or vintage.parent != vintages_root:
+         raise ValueError("vintage path escapes the configured data root")
+     manifest_path = vintage / "manifest.json"
+     expected_manifest_hash = pointer.get("manifest_sha256")
+     if not _is_sha256(expected_manifest_hash) or not manifest_path.is_file() or sha256_file(manifest_path) != expected_manifest_hash:
+         raise ValueError("vintage manifest hash does not match pointer")
+-    return _load_vintage(config, vintage, vintage_id), vintage_id
++    return load_covariate_vintage(config, vintage_id), vintage_id
+
+diff --git "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-base\\tests\\test_chronos.py" "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-head\\tests\\test_chronos.py"
+index 87a03a2..45dd7b1 100644
+--- "a/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-base\\tests\\test_chronos.py"
++++ "b/.superpowers\\sdd\\2026-09-03-chronos-2-market-forecast-plan\\task-6-fix1-head\\tests\\test_chronos.py"
+@@ -1140,13 +1140,14 @@ class ChronosMonitoringTests(unittest.TestCase):
+             )),
+             patch("perpetual_engine.chronos.load_target_table", return_value=targets),
+             patch("perpetual_engine.chronos.load_covariate_table", return_value=(self.covariates, self.vintage_id)),
++            patch("perpetual_engine.chronos.load_covariate_vintage", return_value=self.covariates, create=True),
+         )
+ 
+     def _publish(self, issued_at=datetime(2024, 2, 1, 12, tzinfo=timezone.utc)):
+         from perpetual_engine.chronos import publish_forecast
+ 
+         patches = self._patch_inputs()
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             return publish_forecast(
+                 self.config.path, self.output_root, predictor=self.fake_predictor, issued_at=issued_at
+             )
+@@ -1220,7 +1221,7 @@ class ChronosMonitoringTests(unittest.TestCase):
+         from perpetual_engine.chronos import publish_forecast
+ 
+         patches = self._patch_inputs()
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             with self.assertRaisesRegex(ValueError, "timezone-aware UTC"):
+                 publish_forecast(self.config.path, self.output_root, predictor=self.fake_predictor, issued_at=datetime(2024, 2, 1))
+             with self.assertRaisesRegex(ValueError, "escapes"):
+@@ -1240,7 +1241,7 @@ class ChronosMonitoringTests(unittest.TestCase):
+             self.config.target_csv.write_bytes(b"changed\n")
+             return result
+ 
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             with self.assertRaisesRegex(ValueError, "target.*changed"):
+                 publish_forecast(
+                     self.config.path, self.output_root, predictor=mutate,
+@@ -1264,7 +1265,7 @@ class ChronosMonitoringTests(unittest.TestCase):
+         self.config.target_manifest.write_bytes(b"manifest-v2\n")
+         one_month = self._extended_targets(1)
+         patches = self._patch_inputs(one_month)
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             realized_id = reconcile_forecasts(self.config.path, forecast_root, monitoring_root)
+         self.assertNotEqual(realized_id, pending_id)
+         snapshot = monitoring_root / realized_id
+@@ -1293,7 +1294,7 @@ class ChronosMonitoringTests(unittest.TestCase):
+         self.config.target_manifest.write_bytes(b"manifest-v3\n")
+         two_months = self._extended_targets(2)
+         patches = self._patch_inputs(two_months)
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             second_id = reconcile_forecasts(self.config.path, forecast_root, monitoring_root)
+         self.assertNotEqual(second_id, realized_id)
+         self.assertTrue((monitoring_root / realized_id).is_dir())
+@@ -1312,16 +1313,16 @@ class ChronosMonitoringTests(unittest.TestCase):
+         original = forecast_path.read_bytes()
+         forecast_path.write_bytes(b"corrupt")
+         patches = self._patch_inputs()
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             with self.assertRaisesRegex(ValueError, "hash"):
+                 reconcile_forecasts(self.config.path, forecast_root, self.output_root / "other-monitoring")
+ 
+         forecast_path.write_bytes(original)
+         (forecast_root / "unexpected.txt").write_text("unexpected", encoding="utf-8")
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             with self.assertRaisesRegex(ValueError, "unexpected"):
+                 reconcile_forecasts(self.config.path, forecast_root, self.output_root / "other-monitoring")
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             with self.assertRaisesRegex(ValueError, "escapes"):
+                 reconcile_forecasts(self.config.path, forecast_root, self.root.parent / "outside")
+ 
+@@ -1336,10 +1337,255 @@ class ChronosMonitoringTests(unittest.TestCase):
+                 scenario[index] += index / 1000
+         manifest_path.write_bytes(canonical_json(manifest))
+         patches = self._patch_inputs()
+-        with patches[0], patches[1], patches[2], patches[3]:
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+             with self.assertRaisesRegex(ValueError, "scenario definitions"):
+                 reconcile_forecasts(
+                     self.config.path,
+                     self.output_root / "forecasts",
+                     self.output_root / "other-monitoring",
+                 )
++
++    def test_publication_inference_uses_the_exact_snapshot_tables_bound_to_identity(self):
++        from perpetual_engine.chronos import publish_forecast
++        from perpetual_engine.chronos_data import MonthlyTable
++
++        poisoned_targets = MonthlyTable(self.targets.months, self.targets.names, self.targets.values + 9)
++        poisoned_covariates = MonthlyTable(self.covariates.months, self.covariates.names, self.covariates.values + 99)
++        captured = {}
++
++        def predictor(items, prediction_length, quantile_levels):
++            captured["target"] = items[0]["target"].copy()
++            captured["ecb"] = items[0]["past_covariates"]["ECB_DFR"].copy()
++            return self.fake_predictor(items, prediction_length, quantile_levels)
++
++        calls = 0
++
++        def covariate_load(_config):
++            nonlocal calls
++            calls += 1
++            return (self.covariates if calls == 1 else poisoned_covariates), self.vintage_id
++
++        with patch("perpetual_engine.chronos.load_chronos_config", return_value=self.config), patch(
++            "perpetual_engine.chronos.load_target_snapshot", return_value=(
++                self.targets, sha256_file(self.config.target_csv), sha256_file(self.config.target_manifest)
++            )
++        ), patch("perpetual_engine.chronos.load_target_table", return_value=poisoned_targets), patch(
++            "perpetual_engine.chronos.load_covariate_table", side_effect=covariate_load
++        ), patch(
++            "perpetual_engine.chronos.load_covariate_vintage", return_value=self.covariates, create=True
++        ):
++            publish_forecast(
++                self.config.path, self.output_root, predictor=predictor,
++                issued_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
++            )
++
++        np.testing.assert_array_equal(captured["target"], self.targets.values.astype(np.float32))
++        np.testing.assert_array_equal(captured["ecb"], self.covariates.values[0].astype(np.float32))
++
++    @staticmethod
++    def _shift_csv(payload, fields, amount):
++        source = io.StringIO(payload.decode("utf-8"), newline="")
++        reader = csv.DictReader(source)
++        output = io.StringIO(newline="")
++        writer = csv.DictWriter(output, fieldnames=reader.fieldnames, lineterminator="\n")
++        writer.writeheader()
++        for row in reader:
++            for field in fields:
++                row[field] = repr(float(row[field]) + amount)
++            writer.writerow(row)
++        return output.getvalue().encode("utf-8")
++
++    def test_archive_hash_and_parse_use_one_immutable_read_per_file(self):
++        from perpetual_engine.chronos import ForecastRow, _scenario_sensitivity_bytes, reconcile_forecasts
++
++        forecast_id = self._publish()
++        archive = self.output_root / "forecasts" / forecast_id
++        forecast_path = archive / "forecast.csv"
++        sensitivity_path = archive / "scenario_sensitivity.csv"
++        original_forecast = forecast_path.read_bytes()
++        swapped_forecast = self._shift_csv(original_forecast, ("q10", "q50", "q90"), 1.0)
++        reader = csv.DictReader(io.StringIO(swapped_forecast.decode("utf-8"), newline=""))
++        swapped_rows = tuple(ForecastRow(
++            date(2024, 1, 31), row["scenario"], row["target"], date.fromisoformat(row["forecast_month"]),
++            int(row["horizon"]), float(row["q10"]), float(row["q50"]), float(row["q90"]),
++        ) for row in reader)
++        swapped_sensitivity = _scenario_sensitivity_bytes(swapped_rows)
++        original_sha256 = sha256_file
++
++        def swap_after_hash(path):
++            digest = original_sha256(path)
++            if Path(path).name == "scenario_sensitivity.csv":
++                forecast_path.write_bytes(swapped_forecast)
++                sensitivity_path.write_bytes(swapped_sensitivity)
++            return digest
++
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4], patch(
++            "perpetual_engine.chronos.sha256_file", side_effect=swap_after_hash
++        ):
++            monitoring_id = reconcile_forecasts(
++                self.config.path, self.output_root / "forecasts", self.output_root / "single-read-monitoring"
++            )
++        with (self.output_root / "single-read-monitoring" / monitoring_id / "pending_forecasts.csv").open(
++            newline="", encoding="utf-8"
++        ) as handle:
++            first = next(csv.DictReader(handle))
++        self.assertAlmostEqual(float(first["q50"]), 0.021)
++
++    def _symlink(self, link, target, directory=False):
++        try:
++            link.symlink_to(target, target_is_directory=directory)
++        except OSError as error:
++            self.skipTest(f"symlink non disponibile: {error}")
++
++    def test_forecast_root_cannot_be_a_link_outside_the_requested_output_root(self):
++        from perpetual_engine.chronos import publish_forecast
++
++        self.output_root.mkdir(parents=True)
++        external = self.root / "external-forecasts"
++        external.mkdir()
++        self._symlink(self.output_root / "forecasts", external, directory=True)
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
++            with self.assertRaisesRegex(ValueError, "escapes"):
++                publish_forecast(
++                    self.config.path, self.output_root, predictor=self.fake_predictor,
++                    issued_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
++                )
++        self.assertEqual(list(external.iterdir()), [])
++
++    def test_archive_child_and_internal_files_cannot_link_outside_forecast_root(self):
++        from perpetual_engine.chronos import reconcile_forecasts
++
++        forecast_id = self._publish()
++        forecast_root = self.output_root / "forecasts"
++        archive = forecast_root / forecast_id
++        external_archive = self.output_root / "external-archive"
++        archive.rename(external_archive)
++        self._symlink(archive, external_archive, directory=True)
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
++            with self.assertRaisesRegex(ValueError, "escapes"):
++                reconcile_forecasts(self.config.path, forecast_root, self.output_root / "linked-monitoring")
++
++        archive.unlink()
++        external_archive.rename(archive)
++        forecast_path = archive / "forecast.csv"
++        external_file = self.output_root / "external-forecast.csv"
++        forecast_path.replace(external_file)
++        self._symlink(forecast_path, external_file)
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
++            with self.assertRaisesRegex(ValueError, "escapes"):
++                reconcile_forecasts(self.config.path, forecast_root, self.output_root / "linked-file-monitoring")
++
++    def test_repeat_rejects_issued_at_not_anchored_by_prior_monitoring(self):
++        forecast_id = self._publish()
++        manifest_path = self.output_root / "forecasts" / forecast_id / "manifest.json"
++        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
++        manifest["issued_at"] = "2030-01-01T00:00:00+00:00"
++        manifest_path.write_bytes(canonical_json(manifest))
++        with self.assertRaisesRegex(ValueError, "anchor"):
++            self._publish(datetime(2030, 1, 2, tzinfo=timezone.utc))
++
++    def test_new_publication_rejects_any_older_forecast_without_its_monitoring_anchor(self):
++        old_id = self._publish()
++        manifest_path = self.output_root / "forecasts" / old_id / "manifest.json"
++        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
++        manifest["issued_at"] = "2030-01-01T00:00:00+00:00"
++        manifest_path.write_bytes(canonical_json(manifest))
++        self.config.target_csv.write_bytes(b"target-new-id\n")
++        self.config.target_manifest.write_bytes(b"manifest-new-id\n")
++        with self.assertRaisesRegex(ValueError, "anchor"):
++            self._publish(datetime(2030, 1, 2, tzinfo=timezone.utc))
++        self.assertEqual([path.name for path in (self.output_root / "forecasts").iterdir()], [old_id])
++
++    def test_archive_ecb_base_must_match_the_bound_vintage(self):
++        from perpetual_engine.chronos import ecb_scenarios, reconcile_forecasts
++
++        forecast_id = self._publish()
++        manifest_path = self.output_root / "forecasts" / forecast_id / "manifest.json"
++        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
++        manifest["scenarios"] = {
++            name: values.tolist() for name, values in ecb_scenarios(33.0, 100, 12).items()
++        }
++        manifest_path.write_bytes(canonical_json(manifest))
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
++            with self.assertRaisesRegex(ValueError, "vintage|scenario definitions"):
++                reconcile_forecasts(
++                    self.config.path, self.output_root / "forecasts", self.output_root / "wrong-base-monitoring"
++                )
++
++    def test_forecast_rechecks_inputs_inside_atomic_commit(self):
++        import perpetual_engine.chronos as chronos_module
++
++        real_atomic = chronos_module._atomic_snapshot
++
++        def mutate_before_commit(*args, **kwargs):
++            self.config.target_csv.write_bytes(b"changed-at-commit\n")
++            return real_atomic(*args, **kwargs)
++
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4], patch(
++            "perpetual_engine.chronos._atomic_snapshot", side_effect=mutate_before_commit
++        ), patch("perpetual_engine.chronos.reconcile_forecasts") as reconcile:
++            with self.assertRaisesRegex(ValueError, "target.*changed"):
++                chronos_module.publish_forecast(
++                    self.config.path, self.output_root, predictor=self.fake_predictor,
++                    issued_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
++                )
++        reconcile.assert_not_called()
++        self.assertFalse((self.output_root / "forecasts").exists())
++
++    def test_monitoring_rechecks_inputs_inside_atomic_commit(self):
++        import perpetual_engine.chronos as chronos_module
++
++        self._publish()
++        real_atomic = chronos_module._atomic_snapshot
++
++        def mutate_before_commit(*args, **kwargs):
++            self.config.target_csv.write_bytes(b"changed-at-monitoring-commit\n")
++            return real_atomic(*args, **kwargs)
++
++        output = self.output_root / "commit-monitoring"
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4], patch(
++            "perpetual_engine.chronos._atomic_snapshot", side_effect=mutate_before_commit
++        ):
++            with self.assertRaisesRegex(ValueError, "target.*changed"):
++                chronos_module.reconcile_forecasts(self.config.path, self.output_root / "forecasts", output)
++        self.assertFalse(any(path.name != ".staging" for path in output.iterdir()) if output.exists() else False)
++
++    def test_failed_automatic_reconciliation_rolls_back_only_the_new_forecast(self):
++        self.output_root.mkdir(parents=True)
++        (self.output_root / "monitoring").write_text("collision", encoding="utf-8")
++        with self.assertRaisesRegex(ValueError, "collision"):
++            self._publish()
++        forecast_root = self.output_root / "forecasts"
++        self.assertFalse(forecast_root.exists() and any(forecast_root.iterdir()))
++
++    def test_archive_rejects_non_v1_model_metadata_and_extra_csv_fields(self):
++        from perpetual_engine.chronos import reconcile_forecasts
++
++        forecast_id = self._publish()
++        archive = self.output_root / "forecasts" / forecast_id
++        manifest_path = archive / "manifest.json"
++        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
++        manifest["model"]["device"] = "cuda"
++        manifest_path.write_bytes(canonical_json(manifest))
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
++            with self.assertRaisesRegex(ValueError, "metadata"):
++                reconcile_forecasts(self.config.path, self.output_root / "forecasts", self.output_root / "metadata-monitoring")
++
++        manifest["model"]["device"] = self.config.device
++        forecast_path = archive / "forecast.csv"
++        lines = forecast_path.read_text(encoding="utf-8").splitlines()
++        forecast_path.write_text("\n".join((lines[0], *(line + ",EXTRA" for line in lines[1:]))) + "\n", encoding="utf-8")
++        manifest["generated_sha256"]["forecast.csv"] = sha256_file(forecast_path)
++        manifest_path.write_bytes(canonical_json(manifest))
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
++            with self.assertRaisesRegex(ValueError, "extra|CSV"):
++                reconcile_forecasts(self.config.path, self.output_root / "forecasts", self.output_root / "extra-monitoring")

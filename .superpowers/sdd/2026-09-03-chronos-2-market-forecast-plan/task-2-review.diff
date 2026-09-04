@@ -1,0 +1,531 @@
+diff --git a/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-base/config/chronos_v1.json b/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-head/config/chronos_v1.json
+index fabc4ff..81f46e5 100644
+--- a/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-base/config/chronos_v1.json
++++ b/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-head/config/chronos_v1.json
+@@ -18,7 +18,8 @@
+     {"id": "ECB_DFR", "url": "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR.LEV?format=csvdata", "parser": "ecb_dfr", "role": "known_future"},
+     {"id": "US_TREASURY_10Y", "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10", "parser": "fred_dgs10", "role": "past_only"},
+     {"id": "BRENT_RETURN", "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU", "parser": "fred_brent", "role": "past_only"},
+-    {"id": "BIS_USD_CREDIT_YOY", "url": "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip", "parser": "bis_gli", "role": "past_only"}
++    {"id": "BIS_USD_CREDIT_YOY", "url": "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip", "parser": "bis_gli", "role": "past_only"},
++    {"id": "US_CPI_YOY", "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCNS", "parser": "fred_cpi", "role": "past_only"}
+   ],
+   "evaluation": {"origins": 36, "reported_horizons": [1, 3, 6, 12]},
+   "bootstrap": {"block_months": 6, "resamples": 2000, "seed": 42, "confidence": 0.95}
+diff --git a/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-base/perpetual_engine/chronos_data.py b/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-head/perpetual_engine/chronos_data.py
+index 5418454..7988aac 100644
+--- a/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-base/perpetual_engine/chronos_data.py
++++ b/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-head/perpetual_engine/chronos_data.py
+@@ -2,28 +2,51 @@ from __future__ import annotations
+ 
+ import csv
+ import hashlib
++import io
+ import json
+ import math
+-from dataclasses import dataclass
+-from datetime import date, timedelta
++import zipfile
++from dataclasses import dataclass, replace
++from datetime import date, datetime, timedelta, timezone
++from decimal import Decimal, InvalidOperation
+ from pathlib import Path
+-from typing import Any
++from typing import Any, Iterable, Mapping
+ 
+ import numpy as np
+ 
+ from perpetual_engine.io import canonical_json, sha256_file
++from perpetual_engine.data_sources import SourceArtifact, parse_fred_csv
++from perpetual_engine.point_in_time import ObservationRow, validate_rows
+ 
+ 
+ _TARGETS = ("WORLD", "MOMENTUM", "QUALITY", "TREND")
+-_REQUIRED_SOURCES = ("ECB_DFR", "US_TREASURY_10Y", "BRENT_RETURN", "BIS_USD_CREDIT_YOY")
+-_REGISTERED_PARSERS = frozenset({"ecb_dfr", "fred_dgs10", "fred_brent", "bis_gli"})
++REQUIRED_V1_COVARIATES = ("ECB_DFR", "US_TREASURY_10Y", "BRENT_RETURN", "BIS_USD_CREDIT_YOY", "US_CPI_YOY")
++_REGISTERED_PARSERS = frozenset({"ecb_dfr", "fred_dgs10", "fred_brent", "bis_gli", "fred_cpi"})
+ _REQUIRED_SOURCE_MAPPINGS = {
+     "ECB_DFR": ("ecb_dfr", "known_future"),
+     "US_TREASURY_10Y": ("fred_dgs10", "past_only"),
+     "BRENT_RETURN": ("fred_brent", "past_only"),
+     "BIS_USD_CREDIT_YOY": ("bis_gli", "past_only"),
++    "US_CPI_YOY": ("fred_cpi", "past_only"),
+ }
+ _MODEL = ("amazon/chronos-2", "29ec3766d36d6f73f0696f85560a422f50e8498c", "cpu")
++_ECB_URL = "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR.LEV?format=csvdata"
++_ECB_KEY = "D.U2.EUR.4F.KR.DFR.LEV"
++_BIS_URL = "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip"
++_BIS_MEMBER = "WS_GLI_csv_flat.csv"
++_BIS_FIELDS = (
++    "FREQ:Frequency",
++    "CURR_DENOM:Currency of denomination",
++    "BORROWERS_CTY:Borrowers' country",
++    "BORROWERS_SECTOR:Borrowers' sector",
++    "LENDERS_SECTOR:Lending sector",
++    "L_POS_TYPE:Position type",
++    "L_INSTR:Type of instruments",
++    "UNIT_MEASURE:Unit of measure",
++    "TIME_PERIOD:Time period or range",
++    "OBS_VALUE:Observation Value",
++    "TITLE:Title",
++)
+ 
+ 
+ @dataclass(frozen=True)
+@@ -127,7 +150,7 @@ def load_chronos_config(path: Path) -> ChronosConfig:
+             raise ValueError("Chronos source is invalid or has an unregistered parser")
+         sources.append(SourceSpec(source_id, url, parser, role))
+     source_ids = tuple(source.source_id for source in sources)
+-    if len(source_ids) != len(set(source_ids)) or any(source_ids.count(source_id) != 1 for source_id in _REQUIRED_SOURCES):
++    if len(source_ids) != len(set(source_ids)) or any(source_ids.count(source_id) != 1 for source_id in REQUIRED_V1_COVARIATES):
+         raise ValueError("Chronos requires each v1 source exactly once")
+     if any(
+         (source.parser, source.role) != _REQUIRED_SOURCE_MAPPINGS[source.source_id]
+@@ -190,3 +213,200 @@ def load_target_table(config: ChronosConfig) -> MonthlyTable:
+     array = np.asarray(values, dtype=float).T
+     array.flags.writeable = False
+     return MonthlyTable(tuple(months), config.targets, array)
++
++
++def covariate_names(config: ChronosConfig) -> tuple[str, ...]:
++    return tuple(source.source_id for source in config.sources)
++
++
++def _require_artifact(artifact: SourceArtifact, expected_url: str) -> None:
++    if not isinstance(artifact, SourceArtifact) or artifact.source_url != expected_url:
++        raise ValueError(f"source URL must be exactly {expected_url}")
++    if artifact.retrieved_at.tzinfo is None or artifact.retrieved_at.utcoffset() is None:
++        raise ValueError("artifact retrieved_at must be timezone-aware")
++    if not artifact.local_path.is_file() or sha256_file(artifact.local_path) != artifact.source_hash:
++        raise ValueError("source artifact SHA-256 does not reconcile")
++
++
++def parse_ecb_dfr(artifact: SourceArtifact) -> tuple[ObservationRow, ...]:
++    _require_artifact(artifact, _ECB_URL)
++    with artifact.local_path.open("r", encoding="utf-8-sig", newline="") as handle:
++        reader = csv.DictReader(handle)
++        fields = tuple(reader.fieldnames or ())
++        if any(fields.count(field) != 1 for field in ("KEY", "TIME_PERIOD", "OBS_VALUE")):
++            raise ValueError("ECB CSV requires unique KEY, TIME_PERIOD, and OBS_VALUE columns")
++        rows: list[ObservationRow] = []
++        seen: set[date] = set()
++        for record in reader:
++            if (record.get("KEY") or "").strip() != _ECB_KEY:
++                raise ValueError(f"ECB KEY must be exactly {_ECB_KEY}")
++            try:
++                observed = date.fromisoformat((record.get("TIME_PERIOD") or "").strip())
++                value = Decimal((record.get("OBS_VALUE") or "").strip())
++            except (InvalidOperation, ValueError) as error:
++                raise ValueError("ECB row is malformed") from error
++            if not value.is_finite():
++                raise ValueError("ECB OBS_VALUE must be finite")
++            if observed in seen:
++                raise ValueError("ECB has duplicate observations")
++            seen.add(observed)
++            rows.append(ObservationRow(
++                "ECB_DFR", observed, observed,
++                datetime(observed.year, observed.month, observed.day, tzinfo=timezone.utc),
++                value, "percent_per_annum", artifact.source_url, artifact.retrieved_at, artifact.source_hash,
++                quality_flags=("ECB_OFFICIAL", "EFFECTIVE_DATE"),
++            ))
++    if not rows:
++        raise ValueError("ECB has no observations")
++    return validate_rows(rows)
++
++
++def _quarter_end(period: str) -> date:
++    if len(period) != 7 or period[4:6] != "-Q" or period[6] not in "1234":
++        raise ValueError("BIS period must use YYYY-Qn")
++    try:
++        return _month_end(date(int(period[:4]), int(period[6]) * 3, 1))
++    except ValueError as error:
++        raise ValueError("BIS period must use YYYY-Qn") from error
++
++
++def _bis_available_at(period_end: date) -> datetime:
++    month_index = period_end.year * 12 + period_end.month - 1 + 4
++    year, month_zero = divmod(month_index, 12)
++    available = _month_end(date(year, month_zero + 1, 1))
++    return datetime(available.year, available.month, available.day, 23, 59, 59, tzinfo=timezone.utc)
++
++
++def parse_bis_gli(artifact: SourceArtifact) -> tuple[ObservationRow, ...]:
++    _require_artifact(artifact, _BIS_URL)
++    try:
++        with zipfile.ZipFile(artifact.local_path) as archive:
++            if archive.namelist() != [_BIS_MEMBER]:
++                raise ValueError(f"BIS ZIP must contain only {_BIS_MEMBER}")
++            with archive.open(_BIS_MEMBER) as raw, io.TextIOWrapper(raw, encoding="utf-8-sig", newline="") as handle:
++                reader = csv.DictReader(handle)
++                fields = tuple(reader.fieldnames or ())
++                if any(fields.count(field) != 1 for field in _BIS_FIELDS):
++                    raise ValueError("BIS CSV required headers are missing or duplicated")
++                rows: list[ObservationRow] = []
++                dimensions = _BIS_FIELDS[:7]
++                expected = ("Q", "USD", "3P", "N", "A", "I", "B")
++                for record in reader:
++                    if tuple((record.get(field) or "").strip() for field in dimensions) != expected or (record.get(_BIS_FIELDS[7]) or "").strip() != "771":
++                        continue
++                    period = (record.get(_BIS_FIELDS[8]) or "").strip()
++                    period_end = _quarter_end(period)
++                    try:
++                        value = Decimal((record.get(_BIS_FIELDS[9]) or "").strip())
++                    except InvalidOperation as error:
++                        raise ValueError("BIS observation value is malformed") from error
++                    if not value.is_finite():
++                        raise ValueError("BIS observation value must be finite")
++                    rows.append(ObservationRow(
++                        "BIS_USD_CREDIT_YOY", period_end, period_end, _bis_available_at(period_end),
++                        value, "percent_yoy", artifact.source_url, artifact.retrieved_at, artifact.source_hash,
++                        quality_flags=("BIS_OFFICIAL", "QUARTER_END_PLUS_4_MONTHS"),
++                    ))
++    except zipfile.BadZipFile as error:
++        raise ValueError("BIS ZIP is malformed") from error
++    if not rows:
++        raise ValueError("BIS has no observations")
++    return validate_rows(rows)
++
++
++def parse_fred_covariate(artifact: SourceArtifact, series_id: str) -> tuple[ObservationRow, ...]:
++    if series_id == "DGS10":
++        return parse_fred_csv(
++            artifact, series_id=series_id, unit="percent_per_annum", source_scale="raw",
++            frequency="daily", availability="treasury_next_business_day",
++        )
++    if series_id == "DCOILBRENTEU":
++        rows = parse_fred_csv(
++            artifact, series_id=series_id, unit="usd_per_barrel", source_scale="raw",
++            frequency="daily", availability="observation_end",
++        )
++        return validate_rows(tuple(replace(row, available_at=row.available_at + timedelta(days=7)) for row in rows))
++    if series_id == "CPIAUCNS":
++        rows = parse_fred_csv(
++            artifact, series_id=series_id, unit="index_1982_1984_100", source_scale="raw",
++            frequency="monthly", availability="month_end",
++        )
++        return validate_rows(tuple(replace(
++            row,
++            available_at=datetime(
++                _next_month_end(row.observation_date).year,
++                _next_month_end(row.observation_date).month,
++                _next_month_end(row.observation_date).day,
++                23, 59, 59, tzinfo=timezone.utc,
++            ),
++        ) for row in rows))
++    raise ValueError("FRED covariate series must be DGS10, DCOILBRENTEU, or CPIAUCNS")
++
++
++def _eligible(rows: Iterable[ObservationRow], cutoff: datetime) -> tuple[ObservationRow, ...]:
++    return tuple(row for row in validate_rows(rows) if row.available_at <= cutoff)
++
++
++def _daily_month_mean(rows: Iterable[ObservationRow], month: date, cutoff: datetime) -> float:
++    values = [float(row.value) for row in _eligible(rows, cutoff) if _month_end(row.observation_date) == month]
++    if not values:
++        raise ValueError(f"daily series is unavailable for {month.isoformat()}")
++    return math.fsum(values) / len(values)
++
++
++def _previous_year(value: date) -> date:
++    return _month_end(date(value.year - 1, value.month, 1))
++
++
++def normalize_covariates(
++    config: ChronosConfig,
++    target_months: tuple[date, ...],
++    rows_by_id: Mapping[str, tuple[ObservationRow, ...]],
++) -> MonthlyTable:
++    if not target_months or any(month != _month_end(month) for month in target_months) or any(
++        current != _next_month_end(previous) for previous, current in zip(target_months, target_months[1:])
++    ):
++        raise ValueError("target months must be unique, ordered, contiguous month ends")
++    names = covariate_names(config)
++    if names != REQUIRED_V1_COVARIATES or set(rows_by_id) != set(names):
++        raise ValueError("covariate sources must match the configured v1 contract")
++    expected_series = {
++        "ECB_DFR": "ECB_DFR",
++        "US_TREASURY_10Y": "DGS10",
++        "BRENT_RETURN": "DCOILBRENTEU",
++        "BIS_USD_CREDIT_YOY": "BIS_USD_CREDIT_YOY",
++        "US_CPI_YOY": "CPIAUCNS",
++    }
++    rows = {source_id: validate_rows(source_rows) for source_id, source_rows in rows_by_id.items()}
++    if any(any(row.series_id != expected_series[source_id] for row in source_rows) for source_id, source_rows in rows.items()):
++        raise ValueError("covariate row series does not match its configured source")
++    columns: list[list[float]] = [[] for _ in names]
++    for month in target_months:
++        cutoff = datetime(month.year, month.month, month.day, 23, 59, 59, tzinfo=timezone.utc)
++        ecb = [row for row in _eligible(rows["ECB_DFR"], cutoff) if row.observation_date <= month]
++        if not ecb:
++            raise ValueError(f"ECB is unavailable for {month.isoformat()}")
++        columns[0].append(float(max(ecb, key=lambda row: row.observation_date).value))
++        columns[1].append(_daily_month_mean(rows["US_TREASURY_10Y"], month, cutoff))
++        current_brent = _daily_month_mean(rows["BRENT_RETURN"], month, cutoff)
++        previous_brent = _daily_month_mean(rows["BRENT_RETURN"], month.replace(day=1) - timedelta(days=1), cutoff)
++        if current_brent <= 0 or previous_brent <= 0:
++            raise ValueError("normalized covariate values must be finite")
++        columns[2].append(math.log(current_brent / previous_brent))
++        bis = [row for row in _eligible(rows["BIS_USD_CREDIT_YOY"], cutoff) if row.period_end <= month]
++        if not bis:
++            raise ValueError(f"BIS is unavailable for {month.isoformat()}")
++        columns[3].append(float(max(bis, key=lambda row: row.period_end).value))
++        cpi_month = month.replace(day=1) - timedelta(days=1)
++        eligible_cpi = {row.observation_date: row for row in _eligible(rows["US_CPI_YOY"], cutoff)}
++        current_cpi, prior_cpi = eligible_cpi.get(cpi_month), eligible_cpi.get(_previous_year(cpi_month))
++        if current_cpi is None or prior_cpi is None:
++            raise ValueError(f"CPI is unavailable for {month.isoformat()}")
++        if prior_cpi.value <= 0:
++            raise ValueError("normalized covariate values must be finite")
++        columns[4].append(100.0 * (float(current_cpi.value / prior_cpi.value) - 1.0))
++    array = np.asarray(columns, dtype=float)
++    if array.shape != (len(names), len(target_months)) or not np.isfinite(array).all():
++        raise ValueError("normalized covariate values must be finite")
++    array.flags.writeable = False
++    return MonthlyTable(target_months, names, array)
+diff --git a/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-base/tests/test_chronos.py b/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-head/tests/test_chronos.py
+index ce82032..cfaf7e8 100644
+--- a/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-base/tests/test_chronos.py
++++ b/.superpowers/sdd/2026-09-03-chronos-2-market-forecast-plan/task-2-head/tests/test_chronos.py
+@@ -1,8 +1,12 @@
+ import hashlib
+ import json
++import math
+ import tempfile
+ import unittest
+-from datetime import date
++import zipfile
++from dataclasses import replace
++from datetime import date, datetime, timezone
++from decimal import Decimal
+ from pathlib import Path
+ 
+ from perpetual_engine.io import canonical_json, sha256_file
+@@ -52,6 +56,7 @@ class ChronosConfigTests(unittest.TestCase):
+                 {"id": "US_TREASURY_10Y", "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10", "parser": "fred_dgs10", "role": "past_only"},
+                 {"id": "BRENT_RETURN", "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU", "parser": "fred_brent", "role": "past_only"},
+                 {"id": "BIS_USD_CREDIT_YOY", "url": "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip", "parser": "bis_gli", "role": "past_only"},
++                {"id": "US_CPI_YOY", "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCNS", "parser": "fred_cpi", "role": "past_only"},
+             ],
+             "evaluation": {"origins": 36, "reported_horizons": [1, 3, 6, 12]},
+             "bootstrap": {"block_months": 6, "resamples": 2000, "seed": 42, "confidence": 0.95},
+@@ -78,6 +83,7 @@ class ChronosConfigTests(unittest.TestCase):
+                 ("US_TREASURY_10Y", "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10", "fred_dgs10", "past_only"),
+                 ("BRENT_RETURN", "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU", "fred_brent", "past_only"),
+                 ("BIS_USD_CREDIT_YOY", "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip", "bis_gli", "past_only"),
++                ("US_CPI_YOY", "https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCNS", "fred_cpi", "past_only"),
+             ),
+         )
+         self.assertEqual((config.evaluation_origins, config.reported_horizons), (36, (1, 3, 6, 12)))
+@@ -96,6 +102,7 @@ class ChronosConfigTests(unittest.TestCase):
+             (1, "role", "known_future"),
+             (2, "role", "known_future"),
+             (3, "role", "known_future"),
++            (4, "role", "known_future"),
+         )
+         for index, field, value in invalid_mappings:
+             with self.subTest(index=index, field=field):
+@@ -146,3 +153,203 @@ class ChronosConfigTests(unittest.TestCase):
+                 self._write_manifest()
+                 with self.assertRaises(ValueError):
+                     load_target_table(load_chronos_config(self.config_path))
++
++
++class ChronosCovariateTests(unittest.TestCase):
++    ECB_URL = "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR.LEV?format=csvdata"
++    BIS_URL = "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip"
++    BIS_HEADERS = (
++        "FREQ:Frequency",
++        "CURR_DENOM:Currency of denomination",
++        "BORROWERS_CTY:Borrowers' country",
++        "BORROWERS_SECTOR:Borrowers' sector",
++        "LENDERS_SECTOR:Lending sector",
++        "L_POS_TYPE:Position type",
++        "L_INSTR:Type of instruments",
++        "UNIT_MEASURE:Unit of measure",
++        "TIME_PERIOD:Time period or range",
++        "OBS_VALUE:Observation Value",
++        "TITLE:Title",
++    )
++
++    def setUp(self):
++        from perpetual_engine.chronos_data import SourceSpec, load_chronos_config
++
++        self.directory = tempfile.TemporaryDirectory()
++        self.root = Path(self.directory.name)
++        config = load_chronos_config(Path("config/chronos_v1.json"))
++        if len(config.sources) == 4:
++            config = replace(config, sources=(*config.sources, SourceSpec(
++                "US_CPI_YOY",
++                "https://fred.stlouisfed.org/graph/fredgraph.csv?id=CPIAUCNS",
++                "fred_cpi",
++                "past_only",
++            )))
++        self.config = config
++
++    def tearDown(self):
++        self.directory.cleanup()
++
++    def artifact(self, url, content, name):
++        from perpetual_engine.data_sources import SourceArtifact
++
++        path = self.root / name
++        path.write_bytes(content)
++        return SourceArtifact(
++            url,
++            datetime(2026, 1, 1, tzinfo=timezone.utc),
++            hashlib.sha256(content).hexdigest(),
++            path,
++            len(content),
++            "test-v1",
++        )
++
++    def fred_rows(self, series_id, observations):
++        from perpetual_engine.chronos_data import parse_fred_covariate
++
++        content = ("observation_date," + series_id + "\n" + "\n".join(
++            f"{observed},{value}" for observed, value in observations
++        ) + "\n").encode()
++        return parse_fred_covariate(self.artifact(
++            f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}", content, f"{series_id}.csv"
++        ), series_id)
++
++    def ecb_artifact(self, rows):
++        content = ("KEY,TIME_PERIOD,OBS_VALUE\n" + "\n".join(
++            f"{key},{period},{value}" for key, period, value in rows
++        ) + "\n").encode()
++        return self.artifact(self.ECB_URL, content, "ecb.csv")
++
++    def bis_artifact(self, period, value, *, dimensions=("Q", "USD", "3P", "N", "A", "I", "B"), unit="771", extra_record=None):
++        path = self.root / "bis.zip"
++        record = (*dimensions, unit, period, value, "US dollar credit")
++        with zipfile.ZipFile(path, "w") as archive:
++            records = (record,) if extra_record is None else (extra_record, record)
++            archive.writestr("WS_GLI_csv_flat.csv", ",".join(self.BIS_HEADERS) + "\n" + "\n".join(map(",".join, records)) + "\n")
++        content = path.read_bytes()
++        return self.artifact(self.BIS_URL, content, "bis-artifact.zip")
++
++    def rows_with(self, *, ecb=None, dgs10=None, brent=None, bis=None, cpi=None):
++        from perpetual_engine.chronos_data import parse_bis_gli, parse_ecb_dfr
++
++        return {
++            "ECB_DFR": ecb or parse_ecb_dfr(self.ecb_artifact((
++                ("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"),
++                ("D.U2.EUR.4F.KR.DFR.LEV", "2024-02-15", "4.0"),
++            ))),
++            "US_TREASURY_10Y": dgs10 or self.fred_rows("DGS10", (
++                ("2024-01-02", "4.20"), ("2024-01-03", "4.30"), ("2024-02-01", "4.40"),
++                ("2024-03-01", "4.50"), ("2024-04-01", "4.60"), ("2024-05-01", "4.70"),
++            )),
++            "BRENT_RETURN": brent or self.fred_rows("DCOILBRENTEU", (
++                ("2023-12-01", "100"), ("2024-01-01", "110"), ("2024-02-01", "121"),
++                ("2024-03-01", "133.1"), ("2024-04-01", "146.41"), ("2024-05-01", "161.051"),
++            )),
++            "BIS_USD_CREDIT_YOY": bis or parse_bis_gli(self.bis_artifact("2023-Q3", "5.6")),
++            "US_CPI_YOY": cpi or self.fred_rows("CPIAUCNS", (
++                ("2022-12-01", "100"), ("2023-01-01", "100"), ("2023-02-01", "100"),
++                ("2023-03-01", "100"), ("2023-04-01", "100"),
++                ("2023-12-01", "110"), ("2024-01-01", "120"), ("2024-02-01", "110"),
++                ("2024-03-01", "110"), ("2024-04-01", "110"),
++            )),
++        }
++
++    def test_ecb_uses_last_effective_rate_and_rejects_bad_rows(self):
++        from perpetual_engine.chronos_data import normalize_covariates, parse_ecb_dfr
++
++        rows = parse_ecb_dfr(self.ecb_artifact((
++            ("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"),
++            ("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-20", "3.5"),
++            ("D.U2.EUR.4F.KR.DFR.LEV", "2024-02-15", "4.0"),
++        )))
++        table = normalize_covariates(self.config, (date(2024, 1, 31), date(2024, 2, 29)), self.rows_with(ecb=rows))
++        self.assertEqual(table.values[table.names.index("ECB_DFR")].tolist(), [3.5, 4.0])
++        for bad_rows in (
++            (("WRONG", "2024-01-01", "3.0"),),
++            (("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "bad"),),
++            (("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"), ("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.1")),
++        ):
++            with self.subTest(bad_rows=bad_rows), self.assertRaises(ValueError):
++                parse_ecb_dfr(self.ecb_artifact(bad_rows))
++
++    def test_dgs10_stays_in_published_percentage_points(self):
++        from perpetual_engine.chronos_data import normalize_covariates
++
++        rows = self.fred_rows("DGS10", (("2024-01-02", "4.20"), ("2024-01-03", "4.30")))
++        table = normalize_covariates(self.config, (date(2024, 1, 31),), self.rows_with(dgs10=rows))
++        self.assertAlmostEqual(float(table.values[table.names.index("US_TREASURY_10Y"), 0]), 4.25)
++
++    def test_dgs10_month_end_observation_is_not_available_until_next_business_day(self):
++        from perpetual_engine.chronos_data import normalize_covariates
++        from perpetual_engine.data_sources import treasury_available_at
++
++        rows = self.fred_rows("DGS10", (("2024-01-31", "4.30"),))
++        self.assertGreater(treasury_available_at(date(2024, 1, 31)), datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc))
++        with self.assertRaisesRegex(ValueError, "daily series.*unavailable"):
++            normalize_covariates(self.config, (date(2024, 1, 31),), self.rows_with(dgs10=rows))
++
++    def test_brent_uses_log_monthly_mean_return_and_seven_day_lag(self):
++        from perpetual_engine.chronos_data import normalize_covariates
++
++        rows = self.fred_rows("DCOILBRENTEU", (
++            ("2023-12-01", "100"), ("2024-01-01", "110"), ("2024-01-30", "999"),
++        ))
++        table = normalize_covariates(self.config, (date(2024, 1, 31),), self.rows_with(brent=rows))
++        self.assertAlmostEqual(float(table.values[table.names.index("BRENT_RETURN"), 0]), math.log(1.1))
++
++    def test_bis_release_lag_and_monthly_step_carry(self):
++        from perpetual_engine.chronos_data import normalize_covariates, parse_bis_gli
++
++        rows = parse_bis_gli(self.bis_artifact("2023-Q4", "5.6"))
++        self.assertEqual(rows[0].available_at, datetime(2024, 4, 30, 23, 59, 59, tzinfo=timezone.utc))
++        with self.assertRaisesRegex(ValueError, "BIS.*unavailable"):
++            normalize_covariates(self.config, (date(2024, 3, 31),), self.rows_with(bis=rows))
++        table = normalize_covariates(self.config, (date(2024, 4, 30), date(2024, 5, 31)), self.rows_with(bis=rows))
++        self.assertEqual(table.values[table.names.index("BIS_USD_CREDIT_YOY")].tolist(), [5.6, 5.6])
++
++    def test_bis_rejects_unexpected_key_malformed_period_and_number(self):
++        from perpetual_engine.chronos_data import parse_bis_gli
++
++        unrelated = ("Q", "EUR", "3P", "N", "A", "I", "B", "771", "2023-Q4", "9.9", "unrelated")
++        selected = parse_bis_gli(self.bis_artifact("2023-Q4", "5.6", extra_record=unrelated))
++        self.assertEqual([float(row.value) for row in selected], [5.6])
++        artifacts = (
++            self.bis_artifact("2023-Q4", "5.6", dimensions=("Q", "EUR", "3P", "N", "A", "I", "B")),
++            self.bis_artifact("2023-Q5", "5.6"),
++            self.bis_artifact("2023-Q4", "nan"),
++        )
++        for artifact in artifacts:
++            with self.subTest(path=artifact.local_path), self.assertRaises(ValueError):
++                parse_bis_gli(artifact)
++
++    def test_cpi_yoy_uses_headline_index_only_after_following_month_end(self):
++        from perpetual_engine.chronos_data import normalize_covariates
++
++        rows = self.fred_rows("CPIAUCNS", (("2023-01-01", "100"), ("2024-01-01", "110")))
++        with self.assertRaisesRegex(ValueError, "CPI.*unavailable"):
++            normalize_covariates(self.config, (date(2024, 1, 31),), self.rows_with(cpi=rows))
++        table = normalize_covariates(self.config, (date(2024, 2, 29),), self.rows_with(cpi=rows))
++        self.assertAlmostEqual(float(table.values[table.names.index("US_CPI_YOY"), 0]), 10.0)
++        with self.assertRaises(ValueError):
++            self.fred_rows("CPILFESL", (("2023-01-01", "100"), ("2024-01-01", "110")))
++
++    def test_normalization_rejects_missing_duplicate_and_nonfinite_data(self):
++        from perpetual_engine.chronos_data import normalize_covariates
++
++        with self.assertRaisesRegex(ValueError, "target months"):
++            normalize_covariates(self.config, (date(2024, 1, 31), date(2024, 3, 31)), self.rows_with())
++        rows = self.fred_rows("DGS10", (("2024-01-02", "4.20"),))
++        with self.assertRaisesRegex(ValueError, "duplicate"):
++            normalize_covariates(self.config, (date(2024, 1, 31),), self.rows_with(dgs10=rows + rows))
++        bad_brent = self.fred_rows("DCOILBRENTEU", (("2023-12-01", "100"), ("2024-01-01", "0")))
++        with self.assertRaisesRegex(ValueError, "finite"):
++            normalize_covariates(self.config, (date(2024, 1, 31),), self.rows_with(brent=bad_brent))
++
++    def test_normalized_table_is_ordered_finite_and_read_only(self):
++        from perpetual_engine.chronos_data import normalize_covariates
++
++        table = normalize_covariates(self.config, (date(2024, 1, 31), date(2024, 2, 29)), self.rows_with())
++        self.assertEqual(table.names, ("ECB_DFR", "US_TREASURY_10Y", "BRENT_RETURN", "BIS_USD_CREDIT_YOY", "US_CPI_YOY"))
++        self.assertEqual(table.values.shape, (5, 2))
++        self.assertTrue(all(math.isfinite(value) for value in table.values.flat))
++        self.assertFalse(table.values.flags.writeable)

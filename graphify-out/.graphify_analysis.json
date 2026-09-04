@@ -1,0 +1,207 @@
+{
+  "communities": {
+    "0": [
+      "motor_docs_eg_policy_workbook_transcript_funding_protocol_g",
+      "motor_docs_eg_policy_workbook_transcript_tax_aware_waterfall",
+      "motor_docs_eg_policy_workbook_transcript_tax_lot_capacity",
+      "motor_docs_perpetual_engine_v3_3_daily_leverage_reconstruction",
+      "motor_docs_perpetual_engine_v3_3_italian_tax_ledger",
+      "motor_docs_perpetual_engine_v3_3_lwld_portable_beta",
+      "motor_docs_perpetual_engine_v3_3_swda_core",
+      "motor_docs_perpetual_engine_v3_3_tax_aware_60_20_20"
+    ],
+    "1": [
+      "motor_docs_perpetual_engine_v3_3_income_reserve",
+      "motor_docs_perpetual_engine_v3_3_italian_cpi",
+      "motor_docs_perpetual_engine_v3_3_payout_guardrail",
+      "motor_docs_perpetual_engine_v3_3_perpetual_engine",
+      "motor_docs_perpetual_engine_v3_3_rccr_rcb_metrics",
+      "motor_docs_perpetual_engine_v3_3_real_capital_accounting",
+      "motor_docs_perpetual_engine_v3_3_specification"
+    ],
+    "2": [
+      "motor_docs_eg_policy_workbook_transcript_hard_floor",
+      "motor_docs_eg_policy_workbook_transcript_paired_monte_carlo",
+      "motor_docs_perpetual_engine_v3_3_paired_block_bootstrap",
+      "motor_docs_perpetual_engine_v3_3_pir_optimization",
+      "motor_docs_perpetual_engine_v3_3_regime_conditional_bootstrap",
+      "motor_docs_perpetual_engine_v3_3_strict_perpetuity_constraints"
+    ],
+    "3": [
+      "motor_docs_perpetual_engine_v3_3_anti_lookahead",
+      "motor_docs_perpetual_engine_v3_3_damodaran_erp",
+      "motor_docs_perpetual_engine_v3_3_damodaran_erp_data",
+      "motor_docs_perpetual_engine_v3_3_no_trade_band",
+      "motor_docs_perpetual_engine_v3_3_parameter_perturbation",
+      "motor_docs_perpetual_engine_v3_3_walk_forward_optimization"
+    ],
+    "4": [
+      "motor_docs_eg_policy_workbook_transcript_growth_phase",
+      "motor_docs_eg_policy_workbook_transcript_implementation_transcript",
+      "motor_docs_eg_policy_workbook_transcript_shadow_monitoring",
+      "motor_docs_eg_policy_workbook_transcript_vi_portfolio",
+      "motor_docs_eg_policy_workbook_transcript_weekly_reporting_integration"
+    ],
+    "5": [
+      "motor_docs_eg_policy_workbook_transcript_high_water_mark_ratchet",
+      "motor_docs_eg_policy_workbook_transcript_protected_income",
+      "motor_docs_eg_policy_workbook_transcript_rule_e",
+      "motor_docs_eg_policy_workbook_transcript_three_percent_distribution"
+    ],
+    "6": [
+      "motor_docs_perpetual_engine_v3_3_crisis_engine",
+      "motor_docs_perpetual_engine_v3_3_morin_bayes_control_layer",
+      "motor_docs_perpetual_engine_v3_3_recovery_engine"
+    ],
+    "7": [
+      "motor_docs_perpetual_engine_v3_3_fx_series",
+      "motor_docs_perpetual_engine_v3_3_world_eur_proxy"
+    ],
+    "8": [
+      "motor_docs_perpetual_engine_v3_3_treasury_tips_series",
+      "motor_docs_perpetual_engine_v3_3_treasury_tips_veto"
+    ]
+  },
+  "cohesion": {
+    "0": 0.25,
+    "1": 0.2857142857142857,
+    "2": 0.3333333333333333,
+    "3": 0.3333333333333333,
+    "4": 0.4,
+    "5": 0.5,
+    "6": 1.0,
+    "7": 1.0,
+    "8": 1.0
+  },
+  "gods": [
+    {
+      "id": "motor_docs_eg_policy_workbook_transcript_rule_e",
+      "label": "Distribution Rule E",
+      "degree": 6
+    },
+    {
+      "id": "motor_docs_eg_policy_workbook_transcript_funding_protocol_g",
+      "label": "Funding Protocol G",
+      "degree": 5
+    },
+    {
+      "id": "motor_docs_eg_policy_workbook_transcript_implementation_transcript",
+      "label": "E+G Workbook Implementation Transcript",
+      "degree": 4
+    },
+    {
+      "id": "motor_docs_eg_policy_workbook_transcript_shadow_monitoring",
+      "label": "Shadow Monitoring During Growth",
+      "degree": 3
+    },
+    {
+      "id": "motor_docs_perpetual_engine_v3_3_perpetual_engine",
+      "label": "Perpetual Engine v3.3",
+      "degree": 3
+    },
+    {
+      "id": "motor_docs_perpetual_engine_v3_3_real_capital_accounting",
+      "label": "EUR Real-Capital Accounting",
+      "degree": 3
+    },
+    {
+      "id": "motor_docs_perpetual_engine_v3_3_damodaran_erp",
+      "label": "Damodaran Implied ERP Engine",
+      "degree": 3
+    },
+    {
+      "id": "motor_docs_perpetual_engine_v3_3_tax_aware_60_20_20",
+      "label": "Tax-Aware 60/20/20 Architecture",
+      "degree": 3
+    },
+    {
+      "id": "motor_docs_perpetual_engine_v3_3_payout_guardrail",
+      "label": "Real-Income Payout Guardrail",
+      "degree": 3
+    },
+    {
+      "id": "motor_docs_perpetual_engine_v3_3_paired_block_bootstrap",
+      "label": "Paired Monthly Block Bootstrap",
+      "degree": 3
+    }
+  ],
+  "surprises": [
+    {
+      "source": "Distribution Rule E",
+      "target": "Real-Income Payout Guardrail",
+      "source_files": [
+        "eg_policy_workbook_transcript.txt",
+        "perpetual_engine_v3_3.txt"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; semantically similar concepts with no structural link"
+    },
+    {
+      "source": "Funding Protocol G",
+      "target": "Italian Tax-Lot Ledger",
+      "source_files": [
+        "eg_policy_workbook_transcript.txt",
+        "perpetual_engine_v3_3.txt"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; semantically similar concepts with no structural link; peripheral node `Italian Tax-Lot Ledger` unexpectedly reaches hub `Funding Protocol G`"
+    },
+    {
+      "source": "Paired Monte Carlo Policy Test",
+      "target": "Paired Monthly Block Bootstrap",
+      "source_files": [
+        "eg_policy_workbook_transcript.txt",
+        "perpetual_engine_v3_3.txt"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; semantically similar concepts with no structural link"
+    },
+    {
+      "source": "Shadow Monitoring During Growth",
+      "target": "Walk-Forward Optimization",
+      "source_files": [
+        "eg_policy_workbook_transcript.txt",
+        "perpetual_engine_v3_3.txt"
+      ],
+      "confidence": "INFERRED",
+      "relation": "conceptually_related_to",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities"
+    },
+    {
+      "source": "€600,000 Real Hard Floor",
+      "target": "Strict Perpetuity Constraints",
+      "source_files": [
+        "eg_policy_workbook_transcript.txt",
+        "perpetual_engine_v3_3.txt"
+      ],
+      "confidence": "INFERRED",
+      "relation": "conceptually_related_to",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories"
+    }
+  ],
+  "questions": [
+    {
+      "type": "bridge_node",
+      "question": "Why does `E+G Workbook Implementation Transcript` connect `Community 4` to `Community 0`, `Community 5`?",
+      "why": "High betweenness centrality (0.425) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `Distribution Rule E` connect `Community 5` to `Community 1`, `Community 2`, `Community 4`?",
+      "why": "High betweenness centrality (0.366) - this node is a cross-community bridge."
+    },
+    {
+      "type": "bridge_node",
+      "question": "Why does `Funding Protocol G` connect `Community 0` to `Community 2`, `Community 4`?",
+      "why": "High betweenness centrality (0.292) - this node is a cross-community bridge."
+    },
+    {
+      "type": "isolated_nodes",
+      "question": "What connects `VI Portfolio`, `3% Annual Distribution`, `€1,800 Monthly Protected Income` to the rest of the system?",
+      "why": "18 weakly-connected nodes found - possible documentation gaps or missing edges."
+    }
+  ]
+}

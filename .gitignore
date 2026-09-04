@@ -1,0 +1,7 @@
+.venv/
+.pytest_cache/
+**/__pycache__/
+.yfinance-cache/
+work/yf_cache/
+work/yfinance-cache/
+**/graphify-out/cache/

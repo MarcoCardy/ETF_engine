@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "base_date": "2026-08-19",
+  "base_real_capital": "614590.86",
+  "initial_hwm": "614590.86",
+  "hard_floor": "600000",
+  "activation_threshold": "800000",
+  "ratchet_hwm_step": "100000",
+  "ratchet_floor_increment": "50000",
+  "protected_monthly_gross": "1800",
+  "normal_annual_rate": "0.03",
+  "cpi_series": "ITACPALTT01IXNBM"
+}

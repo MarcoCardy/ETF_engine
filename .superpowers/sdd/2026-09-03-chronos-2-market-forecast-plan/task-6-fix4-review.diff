@@ -1,0 +1,156 @@
+--- a/perpetual_engine/chronos.py
++++ b/perpetual_engine/chronos.py
+@@ -6,7 +6,9 @@
+ import json
+ import math
+ import msvcrt
++import os
+ import shutil
++import stat
+ import tempfile
+ import threading
+ import time
+@@ -100,25 +102,60 @@
+         local_lock = _LOCKS.setdefault(output_root, threading.Lock())
+     with local_lock:
+         lock_path = output_root / ".publication.lock"
+-        with lock_path.open("a+b") as handle:
+-            resolved_lock = Path(handle.name).resolve()
+-            if resolved_lock.parent != output_root or resolved_lock.name != lock_path.name:
++        descriptor = None
++        candidate_descriptor, candidate_name = tempfile.mkstemp(prefix=".publication-lock-", dir=output_root)
++        candidate_path = Path(candidate_name)
++        try:
++            candidate_handle = os.fdopen(candidate_descriptor, "wb")
++            candidate_descriptor = None
++            with candidate_handle:
++                candidate_handle.write(b"0")
++                candidate_handle.flush()
++                os.fsync(candidate_handle.fileno())
++            try:
++                os.link(candidate_path, lock_path)
++            except FileExistsError:
++                pass
++            before = lock_path.lstat()
++            if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
++                raise ValueError("publication lock link escapes its output root direct child")
++            descriptor = os.open(lock_path, os.O_RDWR | os.O_BINARY)
++            current = lock_path.lstat()
++            resolved_lock = lock_path.resolve(strict=True)
++            opened = os.fstat(descriptor)
++            followed = lock_path.stat()
++            identities = {(item.st_dev, item.st_ino) for item in (before, current, opened, followed)}
++            if (
++                stat.S_ISLNK(current.st_mode)
++                or not stat.S_ISREG(current.st_mode)
++                or resolved_lock.parent != output_root
++                or resolved_lock.name != lock_path.name
++                or len(identities) != 1
++            ):
+                 raise ValueError("publication lock escapes its output root direct child")
+-            if handle.tell() == 0:
+-                handle.write(b"0")
+-                handle.flush()
+-            handle.seek(0)
+-            while True:
++            handle = os.fdopen(descriptor, "r+b")
++            descriptor = None
++            with handle:
++                if handle.read() != b"0":
++                    raise ValueError("publication lock format is invalid")
++                handle.seek(0)
++                while True:
++                    try:
++                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
++                        break
++                    except OSError:
++                        time.sleep(0.05)
+                 try:
+-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+-                    break
+-                except OSError:
+-                    time.sleep(0.05)
+-            try:
+-                yield
+-            finally:
+-                handle.seek(0)
+-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
++                    yield
++                finally:
++                    handle.seek(0)
++                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
++        finally:
++            if descriptor is not None:
++                os.close(descriptor)
++            if candidate_descriptor is not None:
++                os.close(candidate_descriptor)
++            candidate_path.unlink(missing_ok=True)
+ 
+ 
+ def _month_end_after(origin: date, months: int) -> date:
+--- a/tests/test_chronos.py
++++ b/tests/test_chronos.py
+@@ -4,6 +4,7 @@
+ import io
+ import json
+ import math
++import os
+ import shutil
+ import tempfile
+ import threading
+@@ -1724,6 +1725,55 @@
+         finally:
+             self.assertEqual(external.read_bytes(), b"")
+ 
++    def test_publication_lock_never_creates_a_dangling_link_target(self):
++        import perpetual_engine.chronos as chronos_module
++
++        self.output_root.mkdir(parents=True)
++        external_parent = self.root / "external-lock-parent"
++        external_parent.mkdir()
++        external = external_parent / "must-not-be-created"
++        self._symlink(self.output_root / ".publication.lock", external)
++        patches = self._patch_inputs()
++        try:
++            with patches[0], patches[1], patches[2], patches[3], patches[4]:
++                with self.assertRaisesRegex(ValueError, "lock.*(link|escapes|direct child)"):
++                    chronos_module.publish_forecast(
++                        self.config.path,
++                        self.output_root,
++                        predictor=self.fake_predictor,
++                        issued_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
++                    )
++        finally:
++            self.assertFalse(external.exists())
++
++    def test_publication_lock_install_loses_safely_to_a_competing_link(self):
++        import perpetual_engine.chronos as chronos_module
++
++        self.output_root.mkdir(parents=True)
++        lock_path = self.output_root / ".publication.lock"
++        external = self.root / "race-target-must-not-be-created"
++        real_link = os.link
++
++        def install_competing_link(source, destination, *args, **kwargs):
++            Path(destination).symlink_to(external)
++            return real_link(source, destination, *args, **kwargs)
++
++        patches = self._patch_inputs()
++        try:
++            with patches[0], patches[1], patches[2], patches[3], patches[4], patch(
++                "perpetual_engine.chronos.os.link", side_effect=install_competing_link
++            ):
++                with self.assertRaisesRegex(ValueError, "lock.*(link|escapes|direct child)"):
++                    chronos_module.publish_forecast(
++                        self.config.path,
++                        self.output_root,
++                        predictor=self.fake_predictor,
++                        issued_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
++                    )
++        finally:
++            self.assertTrue(lock_path.is_symlink())
++            self.assertFalse(external.exists())
++
+     def test_forecast_precommit_detects_mutation_between_target_bundle_reads(self):
+         import perpetual_engine.chronos as chronos_module
+ 

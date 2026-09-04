@@ -1,0 +1,601 @@
+--- a/perpetual_engine/chronos.py
++++ b/perpetual_engine/chronos.py
+@@ -5,8 +5,12 @@
+ import io
+ import json
+ import math
++import msvcrt
+ import shutil
+ import tempfile
++import threading
++import time
++from contextlib import contextmanager
+ from dataclasses import dataclass
+ from datetime import date, datetime, timedelta, timezone
+ from importlib.metadata import PackageNotFoundError, version
+@@ -32,6 +36,9 @@
+ _TARGETS = ("WORLD", "MOMENTUM", "QUALITY", "TREND")
+ _MODEL_ID = "amazon/chronos-2"
+ _MODEL_REVISION = "29ec3766d36d6f73f0696f85560a422f50e8498c"
++_LOCKS: dict[Path, threading.Lock] = {}
++_LOCKS_GUARD = threading.Lock()
++_BOOTSTRAP_TOKEN = object()
+ 
+ 
+ @dataclass(frozen=True)
+@@ -77,6 +84,40 @@
+     absolute_error: float
+     squared_error: float
+     interval_hit: bool
++
++
++@dataclass(frozen=True)
++class _BootstrapProof:
++    forecast_id: str
++    manifest_hash: str
++    token: object
++
++
++@contextmanager
++def _publication_lock(output_root: Path):
++    """Serialize the append-only forecast/monitoring transaction per output root."""
++    output_root.mkdir(parents=True, exist_ok=True)
++    output_root = output_root.resolve()
++    with _LOCKS_GUARD:
++        local_lock = _LOCKS.setdefault(output_root, threading.Lock())
++    with local_lock:
++        lock_path = output_root / ".publication.lock"
++        with lock_path.open("a+b") as handle:
++            if handle.tell() == 0:
++                handle.write(b"0")
++                handle.flush()
++            handle.seek(0)
++            while True:
++                try:
++                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
++                    break
++                except OSError:
++                    time.sleep(0.05)
++            try:
++                yield
++            finally:
++                handle.seek(0)
++                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+ 
+ 
+ def _month_end_after(origin: date, months: int) -> date:
+@@ -661,7 +702,7 @@
+     label: str,
+     *,
+     precommit: Callable[[], None] | None = None,
+-) -> Path:
++) -> tuple[Path, bool]:
+     destination_parent = destination.parent.resolve()
+     staging_root = staging_root.resolve()
+     destination_parent_existed = destination_parent.exists()
+@@ -700,17 +741,43 @@
+             if precommit is not None:
+                 precommit()
+             shutil.rmtree(stage)
+-            return destination
++            return destination, False
+         if precommit is not None:
+             precommit()
+         stage.replace(destination)
+-        return destination
++        return destination, True
+     except Exception:
+         if stage.exists() and stage.is_relative_to(staging_root.resolve()):
+             shutil.rmtree(stage)
+         if not destination_parent_existed and destination_parent.is_dir() and not any(destination_parent.iterdir()):
+             destination_parent.rmdir()
+         raise
++
++
++def _stable_target_hashes(config: ChronosConfig) -> tuple[str, str]:
++    try:
++        first = (config.target_csv.read_bytes(), config.target_manifest.read_bytes())
++        second = (config.target_csv.read_bytes(), config.target_manifest.read_bytes())
++    except OSError as error:
++        raise ValueError("target inputs changed during commit") from error
++    if first != second:
++        raise ValueError("target inputs changed during commit")
++    return tuple(hashlib.sha256(payload).hexdigest() for payload in second)
++
++
++def _rollback_created_snapshot(destination: Path, root: Path, files: Mapping[str, bytes]) -> None:
++    root = root.resolve()
++    resolved = destination.resolve()
++    if not destination.is_dir() or resolved.parent != root or resolved.name != destination.name:
++        raise ValueError("owned forecast rollback escaped forecast root")
++    children = tuple(resolved.iterdir())
++    if len(children) != len(files) or {child.name for child in children} != set(files):
++        raise ValueError("owned forecast changed before rollback")
++    for child in children:
++        actual = child.resolve()
++        if not child.is_file() or actual.parent != resolved or actual.read_bytes() != files[child.name]:
++            raise ValueError("owned forecast changed before rollback")
++    shutil.rmtree(resolved)
+ 
+ 
+ def _parse_utc(value: object, label: str) -> datetime:
+@@ -981,12 +1048,21 @@
+ 
+ def _require_forecast_anchor(
+     monitoring_root: Path,
++    expected_output_root: Path,
+     forecast_identifier: str,
+     forecast_manifest_hash: str,
+ ) -> None:
++    expected_output_root = expected_output_root.resolve()
++    requested_root = monitoring_root
+     if not monitoring_root.exists() or not monitoring_root.is_dir():
+         raise ValueError("existing forecast issued_at has no monitoring anchor")
+     monitoring_root = monitoring_root.resolve()
++    if (
++        requested_root.parent.resolve() != expected_output_root
++        or monitoring_root.parent != expected_output_root
++        or monitoring_root.name != requested_root.name
++    ):
++        raise ValueError("monitoring anchor root is not a real direct child of output root")
+     anchored = False
+     for child in sorted(monitoring_root.iterdir(), key=lambda item: item.name):
+         if child.name == ".staging":
+@@ -1004,6 +1080,21 @@
+ 
+ 
+ def publish_forecast(
++    config_path: Path,
++    output_root: Path,
++    *,
++    predictor: Callable | None = None,
++    issued_at: datetime | None = None,
++) -> str:
++    config = load_chronos_config(config_path)
++    _require_v1(config)
++    output_root = _safe_project_path(output_root, config, "forecast output")
++    issued_at = _parse_utc(issued_at or datetime.now(timezone.utc), "issued_at")
++    with _publication_lock(output_root):
++        return _publish_forecast_locked(config_path, output_root, predictor=predictor, issued_at=issued_at)
++
++
++def _publish_forecast_locked(
+     config_path: Path,
+     output_root: Path,
+     *,
+@@ -1021,7 +1112,7 @@
+     archived_rows, archived_hashes, archived_ids = _scan_forecasts(forecast_root, config)
+     archive_hash_by_id = dict(zip(archived_ids, archived_hashes))
+     for archived_id, archived_hash in zip(archived_ids, archived_hashes):
+-        _require_forecast_anchor(output_root / "monitoring", archived_id, archived_hash)
++        _require_forecast_anchor(output_root / "monitoring", output_root, archived_id, archived_hash)
+ 
+     targets, target_hash, target_manifest_hash = load_target_snapshot(config)
+     covariates, vintage_id = load_covariate_table(config)
+@@ -1066,8 +1157,7 @@
+     def inputs_unchanged() -> None:
+         try:
+             unchanged = (
+-                sha256_file(config.target_csv) == target_hash
+-                and sha256_file(config.target_manifest) == target_manifest_hash
++                _stable_target_hashes(config) == (target_hash, target_manifest_hash)
+                 and load_covariate_table(config)[1] == vintage_id
+             )
+         except OSError as error:
+@@ -1075,20 +1165,21 @@
+         if not unchanged:
+             raise ValueError("target or covariate inputs changed during forecast")
+ 
+-    was_existing = destination.exists()
+-    _atomic_snapshot(destination, staging_root, files, "forecast", precommit=inputs_unchanged)
+-    try:
+-        reconcile_forecasts(
++    _path, created = _atomic_snapshot(destination, staging_root, files, "forecast", precommit=inputs_unchanged)
++    proof = _BootstrapProof(identifier, hashlib.sha256(files["manifest.json"]).hexdigest(), _BOOTSTRAP_TOKEN)
++    try:
++        _reconcile_forecasts_locked(
+             config_path,
+             forecast_root,
+             output_root / "monitoring",
+-            _new_forecast_id=identifier if not was_existing else None,
++            _bootstrap=proof if created else None,
+         )
+-    except Exception:
+-        if not was_existing and destination.is_dir():
+-            current = {path.name: path.read_bytes() for path in destination.iterdir() if path.is_file()}
+-            if current == files and len(tuple(destination.iterdir())) == len(files):
+-                shutil.rmtree(destination)
++    except Exception as error:
++        if created:
++            try:
++                _rollback_created_snapshot(destination, forecast_root, files)
++            except Exception as rollback_error:
++                raise rollback_error from error
+         raise
+     return identifier
+ 
+@@ -1163,8 +1254,21 @@
+     config_path: Path,
+     forecast_root: Path,
+     output: Path,
++) -> str:
++    config = load_chronos_config(config_path)
++    _require_v1(config)
++    forecast_root = _safe_project_path(forecast_root, config, "forecast root")
++    output = _safe_project_path(output, config, "monitoring output")
++    with _publication_lock(forecast_root.parent):
++        return _reconcile_forecasts_locked(config_path, forecast_root, output)
++
++
++def _reconcile_forecasts_locked(
++    config_path: Path,
++    forecast_root: Path,
++    output: Path,
+     *,
+-    _new_forecast_id: str | None = None,
++    _bootstrap: _BootstrapProof | None = None,
+ ) -> str:
+     config = load_chronos_config(config_path)
+     _require_v1(config)
+@@ -1172,9 +1276,20 @@
+     output = _safe_project_path(output, config, "monitoring output")
+     forecasts, manifest_hashes, forecast_ids = _scan_forecasts(forecast_root, config)
+     anchor_root = forecast_root.parent / "monitoring"
++    if _bootstrap is not None and _bootstrap.token is not _BOOTSTRAP_TOKEN:
++        raise ValueError("invalid forecast bootstrap proof")
++    bootstrap_found = False
+     for archived_id, archived_hash in zip(forecast_ids, manifest_hashes):
+-        if archived_id != _new_forecast_id:
+-            _require_forecast_anchor(anchor_root, archived_id, archived_hash)
++        if (
++            _bootstrap is not None
++            and archived_id == _bootstrap.forecast_id
++            and archived_hash == _bootstrap.manifest_hash
++        ):
++            bootstrap_found = True
++            continue
++        _require_forecast_anchor(anchor_root, forecast_root.parent, archived_id, archived_hash)
++    if _bootstrap is not None and not bootstrap_found:
++        raise ValueError("new forecast bootstrap proof does not match archive")
+     manifest_hashes = tuple(sorted(manifest_hashes))
+     targets, target_hash, target_manifest_hash = load_target_snapshot(config)
+     if targets.names != _TARGETS or targets.values.shape != (4, len(targets.months)):
+@@ -1259,10 +1374,7 @@
+ 
+     def inputs_unchanged() -> None:
+         try:
+-            unchanged = (
+-                sha256_file(config.target_csv) == target_hash
+-                and sha256_file(config.target_manifest) == target_manifest_hash
+-            )
++            unchanged = _stable_target_hashes(config) == (target_hash, target_manifest_hash)
+         except OSError as error:
+             raise ValueError("target inputs changed during reconciliation") from error
+         if not unchanged:
+--- a/perpetual_engine/chronos_data.py
++++ b/perpetual_engine/chronos_data.py
+@@ -480,7 +480,14 @@
+ 
+ def _json_object(path: Path, name: str) -> dict[str, Any]:
+     try:
+-        value = json.loads(path.read_text(encoding="utf-8"))
++        return _json_bytes_object(path.read_bytes(), name)
++    except OSError as error:
++        raise ValueError(f"{name} is malformed") from error
++
++
++def _json_bytes_object(payload: bytes, name: str) -> dict[str, Any]:
++    try:
++        value = json.loads(payload.decode("utf-8"))
+     except (OSError, UnicodeError, json.JSONDecodeError) as error:
+         raise ValueError(f"{name} is malformed") from error
+     if not isinstance(value, dict):
+@@ -520,6 +527,7 @@
+     vintage_id: str,
+     *,
+     staging_root: Path | None = None,
++    manifest_bytes: bytes | None = None,
+ ) -> MonthlyTable:
+     if not _is_sha256(vintage_id):
+         raise ValueError("vintage ID is invalid")
+@@ -530,8 +538,13 @@
+         raise ValueError("staging path escapes the configured data root")
+     if not vintage.is_relative_to(allowed_root):
+         raise ValueError("vintage path escapes the configured data root or staging directory")
+-    manifest_path = vintage / "manifest.json"
+-    manifest = _json_object(manifest_path, "vintage manifest")
++    manifest_path = _contained_file(vintage, "manifest.json", "vintage manifest")
++    if manifest_bytes is None:
++        try:
++            manifest_bytes = manifest_path.read_bytes()
++        except OSError as error:
++            raise ValueError("vintage manifest is malformed") from error
++    manifest = _json_bytes_object(manifest_bytes, "vintage manifest")
+     if set(manifest) != {"schema_version", "vintage_id", "config_hash", "sources", "raw_files_sha256", "availability", "generated_sha256"}:
+         raise ValueError("vintage manifest schema is invalid")
+     if manifest.get("schema_version") != "CHRONOS_VINTAGE_V1":
+@@ -564,16 +577,19 @@
+     if not isinstance(generated, dict) or set(generated) != {"covariates.csv"} or not _is_sha256(generated["covariates.csv"]):
+         raise ValueError("vintage generated hashes are invalid")
+     covariate_path = _contained_file(vintage, "covariates.csv", "normalized covariates")
+-    if sha256_file(covariate_path) != generated["covariates.csv"]:
++    try:
++        covariate_bytes = covariate_path.read_bytes()
++    except OSError as error:
++        raise ValueError("normalized covariates are unreadable") from error
++    if hashlib.sha256(covariate_bytes).hexdigest() != generated["covariates.csv"]:
+         raise ValueError("normalized hash does not match")
+     identity = _vintage_identity(config.config_hash, sources, recorded_raw_files, generated["covariates.csv"])
+     computed_id = hashlib.sha256(canonical_json(identity)).hexdigest()
+     if manifest.get("vintage_id") != vintage_id or computed_id != vintage_id:
+         raise ValueError("vintage ID does not match its immutable identity")
+     try:
+-        with covariate_path.open("r", encoding="utf-8", newline="") as handle:
+-            csv_rows = list(csv.reader(handle))
+-    except (OSError, UnicodeError) as error:
++        csv_rows = list(csv.reader(io.StringIO(covariate_bytes.decode("utf-8"), newline="")))
++    except UnicodeError as error:
+         raise ValueError("normalized covariates are unreadable") from error
+     header = ("month", *covariate_names(config))
+     if not csv_rows or tuple(csv_rows[0]) != header:
+@@ -723,7 +739,11 @@
+     if not data_root.is_relative_to(config.project_root.resolve()):
+         raise ValueError("data root escapes project root")
+     pointer_path = data_root / "current_manifest.json"
+-    pointer = _json_object(pointer_path, "current vintage pointer")
++    try:
++        pointer_bytes = pointer_path.read_bytes()
++    except OSError as error:
++        raise ValueError("current vintage pointer is malformed") from error
++    pointer = _json_bytes_object(pointer_bytes, "current vintage pointer")
+     if set(pointer) != {"schema_version", "vintage_id", "manifest_sha256"} or pointer.get("schema_version") != "CHRONOS_CURRENT_V1":
+         raise ValueError("current vintage pointer schema is invalid")
+     vintage_id = pointer.get("vintage_id")
+@@ -735,8 +755,11 @@
+     vintage = (vintages_root / vintage_id).resolve()
+     if not vintage.is_relative_to(vintages_root) or vintage.parent != vintages_root:
+         raise ValueError("vintage path escapes the configured data root")
+-    manifest_path = vintage / "manifest.json"
+     expected_manifest_hash = pointer.get("manifest_sha256")
+-    if not _is_sha256(expected_manifest_hash) or not manifest_path.is_file() or sha256_file(manifest_path) != expected_manifest_hash:
++    try:
++        manifest_bytes = _contained_file(vintage, "manifest.json", "vintage manifest").read_bytes()
++    except OSError as error:
++        raise ValueError("vintage manifest hash does not match pointer") from error
++    if not _is_sha256(expected_manifest_hash) or hashlib.sha256(manifest_bytes).hexdigest() != expected_manifest_hash:
+         raise ValueError("vintage manifest hash does not match pointer")
+-    return load_covariate_vintage(config, vintage_id), vintage_id
++    return _load_vintage(config, vintage, vintage_id, manifest_bytes=manifest_bytes), vintage_id
+--- a/tests/test_chronos.py
++++ b/tests/test_chronos.py
+@@ -1,10 +1,12 @@
+ import csv
+ import hashlib
++import inspect
+ import io
+ import json
+ import math
+ import shutil
+ import tempfile
++import threading
+ import types
+ import unittest
+ import zipfile
+@@ -484,6 +486,34 @@
+         self.assertEqual(table.months, (date(2024, 1, 31), date(2024, 2, 29)))
+         self.assertEqual(table.values.shape, (5, 2))
+         self.assertFalse(table.values.flags.writeable)
++
++    def test_vintage_hash_and_parse_use_the_same_covariate_bytes(self):
++        import perpetual_engine.chronos_data as data_module
++
++        vintage_id = data_module.refresh_chronos_data(
++            self.config_path, fetcher=self.payloads.__getitem__, retrieved_at=self.at
++        )
++        config = data_module.load_chronos_config(self.config_path)
++        covariates = config.data_root / "vintages" / vintage_id / "covariates.csv"
++        original_hash = data_module.sha256_file
++        changed = False
++
++        def replace_after_hash(path):
++            nonlocal changed
++            digest = original_hash(path)
++            if Path(path).resolve() == covariates.resolve() and not changed:
++                changed = True
++                covariates.write_text(
++                    covariates.read_text(encoding="utf-8").replace("2024-01-31,3", "2024-01-31,33", 1),
++                    encoding="utf-8",
++                    newline="",
++                )
++            return digest
++
++        with patch("perpetual_engine.chronos_data.sha256_file", side_effect=replace_after_hash):
++            table, loaded_id = data_module.load_covariate_table(config)
++        self.assertEqual(loaded_id, vintage_id)
++        self.assertEqual(float(table.values[0, 0]), 3.0)
+ 
+     def test_refresh_identity_binds_retrieval_metadata(self):
+         from perpetual_engine.chronos_data import refresh_chronos_data
+@@ -1479,6 +1509,38 @@
+             with self.assertRaisesRegex(ValueError, "escapes"):
+                 reconcile_forecasts(self.config.path, forecast_root, self.output_root / "linked-file-monitoring")
+ 
++    def test_monitoring_anchor_root_must_be_a_real_direct_child_of_output_root(self):
++        from perpetual_engine.chronos import reconcile_forecasts
++
++        self._publish()
++        monitoring = self.output_root / "monitoring"
++        external = self.root / "external-monitoring"
++        monitoring.rename(external)
++        self._symlink(monitoring, external, directory=True)
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4]:
++            with self.assertRaisesRegex(ValueError, "monitoring.*(direct|escapes|root)"):
++                reconcile_forecasts(
++                    self.config.path,
++                    self.output_root / "forecasts",
++                    self.output_root / "other-monitoring",
++                )
++
++    def test_reconciliation_public_interface_has_no_bootstrap_bypass(self):
++        from perpetual_engine.chronos import reconcile_forecasts
++
++        self.assertEqual(
++            tuple(inspect.signature(reconcile_forecasts).parameters),
++            ("config_path", "forecast_root", "output"),
++        )
++        with self.assertRaises(TypeError):
++            reconcile_forecasts(
++                self.config.path,
++                self.output_root / "forecasts",
++                self.output_root / "monitoring",
++                _new_forecast_id="0" * 64,
++            )
++
+     def test_repeat_rejects_issued_at_not_anchored_by_prior_monitoring(self):
+         forecast_id = self._publish()
+         manifest_path = self.output_root / "forecasts" / forecast_id / "manifest.json"
+@@ -1565,6 +1627,143 @@
+         forecast_root = self.output_root / "forecasts"
+         self.assertFalse(forecast_root.exists() and any(forecast_root.iterdir()))
+ 
++    def test_rollback_never_deletes_an_identical_archive_created_by_another_publisher(self):
++        import perpetual_engine.chronos as chronos_module
++
++        self.output_root.mkdir(parents=True)
++        (self.output_root / "monitoring").write_text("collision", encoding="utf-8")
++        real_atomic = chronos_module._atomic_snapshot
++        concurrent_destination = None
++
++        def concurrent_publish(destination, staging_root, files, label, **kwargs):
++            nonlocal concurrent_destination
++            if label == "forecast" and not destination.exists():
++                destination.mkdir(parents=True)
++                for name, payload in files.items():
++                    (destination / name).write_bytes(payload)
++                concurrent_destination = destination
++            return real_atomic(destination, staging_root, files, label, **kwargs)
++
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4], patch(
++            "perpetual_engine.chronos._atomic_snapshot", side_effect=concurrent_publish
++        ):
++            with self.assertRaises(ValueError):
++                chronos_module.publish_forecast(
++                    self.config.path,
++                    self.output_root,
++                    predictor=self.fake_predictor,
++                    issued_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
++                )
++        self.assertIsNotNone(concurrent_destination)
++        self.assertTrue(concurrent_destination.is_dir())
++
++    def test_publication_lock_serializes_publishers_for_one_output_root(self):
++        from perpetual_engine.chronos import _publication_lock
++
++        first_acquired = threading.Event()
++        release_first = threading.Event()
++        second_started = threading.Event()
++        second_acquired = threading.Event()
++
++        def first():
++            with _publication_lock(self.output_root):
++                first_acquired.set()
++                release_first.wait(2)
++
++        def second():
++            first_acquired.wait(2)
++            second_started.set()
++            with _publication_lock(self.output_root):
++                second_acquired.set()
++
++        threads = (threading.Thread(target=first), threading.Thread(target=second))
++        for thread in threads:
++            thread.start()
++        self.assertTrue(first_acquired.wait(1))
++        self.assertTrue(second_started.wait(1))
++        self.assertFalse(second_acquired.wait(0.1))
++        release_first.set()
++        for thread in threads:
++            thread.join(2)
++        self.assertTrue(second_acquired.is_set())
++
++    def test_forecast_precommit_detects_mutation_between_target_bundle_reads(self):
++        import perpetual_engine.chronos as chronos_module
++
++        target = self.config.target_csv.resolve()
++        real_hash = chronos_module.sha256_file
++        real_read = Path.read_bytes
++        changed = False
++
++        def mutate_after_hash(path):
++            nonlocal changed
++            digest = real_hash(path)
++            if Path(path).resolve() == target and not changed:
++                changed = True
++                self.config.target_csv.write_bytes(b"changed-between-checks\n")
++            return digest
++
++        def mutate_after_read(path):
++            nonlocal changed
++            payload = real_read(path)
++            if path.resolve() == target and not changed:
++                changed = True
++                self.config.target_csv.write_bytes(b"changed-between-checks\n")
++            return payload
++
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4], patch(
++            "perpetual_engine.chronos.sha256_file", side_effect=mutate_after_hash
++        ), patch.object(Path, "read_bytes", mutate_after_read), patch(
++            "perpetual_engine.chronos.reconcile_forecasts", return_value="monitoring"
++        ), patch("perpetual_engine.chronos._reconcile_forecasts_locked", return_value="monitoring", create=True):
++            with self.assertRaisesRegex(ValueError, "target.*changed"):
++                chronos_module.publish_forecast(
++                    self.config.path,
++                    self.output_root,
++                    predictor=self.fake_predictor,
++                    issued_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
++                )
++        forecast_root = self.output_root / "forecasts"
++        self.assertFalse(forecast_root.exists() and any(forecast_root.iterdir()))
++
++    def test_monitoring_precommit_detects_mutation_between_target_bundle_reads(self):
++        import perpetual_engine.chronos as chronos_module
++
++        self._publish()
++        target = self.config.target_csv.resolve()
++        real_hash = chronos_module.sha256_file
++        real_read = Path.read_bytes
++        changed = False
++
++        def mutate_after_hash(path):
++            nonlocal changed
++            digest = real_hash(path)
++            if Path(path).resolve() == target and not changed:
++                changed = True
++                self.config.target_csv.write_bytes(b"changed-between-monitoring-checks\n")
++            return digest
++
++        def mutate_after_read(path):
++            nonlocal changed
++            payload = real_read(path)
++            if path.resolve() == target and not changed:
++                changed = True
++                self.config.target_csv.write_bytes(b"changed-between-monitoring-checks\n")
++            return payload
++
++        output = self.output_root / "between-read-monitoring"
++        patches = self._patch_inputs()
++        with patches[0], patches[1], patches[2], patches[3], patches[4], patch(
++            "perpetual_engine.chronos.sha256_file", side_effect=mutate_after_hash
++        ), patch.object(Path, "read_bytes", mutate_after_read):
++            with self.assertRaisesRegex(ValueError, "target.*changed"):
++                chronos_module.reconcile_forecasts(
++                    self.config.path, self.output_root / "forecasts", output
++                )
++        self.assertFalse(any(path.name != ".staging" for path in output.iterdir()) if output.exists() else False)
++
+     def test_archive_rejects_non_v1_model_metadata_and_extra_csv_fields(self):
+         from perpetual_engine.chronos import reconcile_forecasts
+ 
