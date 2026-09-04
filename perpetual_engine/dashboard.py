@@ -66,14 +66,19 @@ def _candidate_state(state: DashboardState, rows: list[dict[str, object]]) -> Da
 
 def _refresh(paths: DashboardPaths, state: DashboardState) -> None:
     st.session_state["refreshing"] = True
+    succeeded = False
     try:
         with st.status("Aggiornamento dati...", expanded=True):
             refresh_dashboard_data(paths, state)
         st.success("Dati aggiornati.")
+        succeeded = True
     except Exception as error:
         _show_error(error)
     finally:
         st.session_state["refreshing"] = False
+    if succeeded:
+        st.session_state.pop("comparison_cache", None)
+        st.rerun()
 
 
 def _render_status(paths: DashboardPaths, state: DashboardState) -> None:
@@ -81,11 +86,11 @@ def _render_status(paths: DashboardPaths, state: DashboardState) -> None:
         status = current_data_status(paths, state)
     except Exception as error:
         _show_error(error)
-        return
-    if status.available:
+        status = None
+    if status and status.available:
         st.sidebar.caption(f"Ultimo aggiornamento: {status.retrieved_at:%d/%m/%Y %H:%M}")
         st.sidebar.caption(f"Periodo comune: {status.first_month:%m/%Y} – {status.last_month:%m/%Y}")
-    else:
+    elif status:
         st.sidebar.warning(status.reason or "Dati non disponibili.")
     if st.sidebar.button("Aggiorna dati", key="refresh_data", disabled=st.session_state.get("refreshing", False)):
         _refresh(paths, state)
@@ -99,14 +104,14 @@ def _render_portfolio(paths: DashboardPaths, state: DashboardState) -> None:
     draft = st.data_editor(
         pd.DataFrame(st.session_state.portfolio_draft),
         key="portfolio_editor",
-        disabled=["ID", "Simbolo", "ISIN", "Mercato", "Valuta"],
+        disabled=True if disabled else ["ID", "Simbolo", "ISIN", "Mercato", "Valuta"],
         num_rows="fixed",
         column_config={"Peso %": st.column_config.NumberColumn("Peso %", min_value=0.0, format="%.2f")},
         width="stretch",
     )
     st.session_state.portfolio_draft = draft.to_dict("records")
     catalog = [item for item in state.catalog if item.study_id not in {row["ID"] for row in st.session_state.portfolio_draft}]
-    add_id = st.selectbox("Aggiungi dal catalogo", [""] + [item.study_id for item in catalog], key="add_holding")
+    add_id = st.selectbox("Aggiungi dal catalogo", [""] + [item.study_id for item in catalog], key="add_holding", disabled=disabled)
     if st.button("Aggiungi al portafoglio", key="add_holding_button", disabled=disabled or not add_id):
         item = next(item for item in catalog if item.study_id == add_id)
         st.session_state.portfolio_draft.append({
@@ -115,7 +120,7 @@ def _render_portfolio(paths: DashboardPaths, state: DashboardState) -> None:
         })
         st.rerun()
     removable = [row["ID"] for row in st.session_state.portfolio_draft]
-    remove_id = st.selectbox("Rimuovi dal portafoglio", [""] + removable, key="remove_holding")
+    remove_id = st.selectbox("Rimuovi dal portafoglio", [""] + removable, key="remove_holding", disabled=disabled)
     if st.button("Rimuovi dal portafoglio", key="remove_holding_button", disabled=disabled or not remove_id):
         st.session_state.portfolio_draft = [row for row in st.session_state.portfolio_draft if row["ID"] != remove_id]
         st.rerun()
@@ -157,6 +162,7 @@ def _render_etf(paths: DashboardPaths, state: DashboardState) -> None:
         (None, *candidates),
         format_func=lambda item: "Seleziona un ETF" if item is None else f"{item.name} — {item.ticker} — {item.isin} — {item.exchange}",
         key="etf_candidate",
+        disabled=disabled,
     )
     if st.button("Conferma ETF", key="confirm_etf", disabled=disabled or selected is None):
         try:
@@ -167,7 +173,7 @@ def _render_etf(paths: DashboardPaths, state: DashboardState) -> None:
             st.rerun()
         except Exception as error:
             _show_error(error)
-    remove_id = st.selectbox("Rimuovi ETF dal catalogo", [""] + [item.study_id for item in state.catalog], key="remove_catalog")
+    remove_id = st.selectbox("Rimuovi ETF dal catalogo", [""] + [item.study_id for item in state.catalog], key="remove_catalog", disabled=disabled)
     if st.button("Rimuovi dal catalogo", key="remove_catalog_button", disabled=disabled or not remove_id):
         try:
             updated = remove_catalog_entry(state, remove_id)
@@ -187,10 +193,27 @@ def _render_comparison_report(output_dir: Path) -> None:
     monthly = _csv_table(output_dir / "comparison_monthly.csv")
     summary = _csv_table(output_dir / "comparison_summary.csv").iloc[0]
     contributions = _csv_table(output_dir / "component_contributions.csv")
+    short_history = summary["SHORT_LIVE_HISTORY"].strip().lower() == "true"
+    st.caption(f"Periodo del confronto: {summary['first_month']} – {summary['last_month']} ({summary['count']} rendimenti mensili)")
+    if short_history:
+        st.warning("Storico breve: rendimento annualizzato, volatilità e correlazione sono soltanto indicativi.")
     columns = st.columns(3)
     columns[0].metric("Rendimento ETF", f"{float(summary['etf_cumulative_return']):.2%}")
     columns[1].metric("Rendimento portafoglio", f"{float(summary['portfolio_cumulative_return']):.2%}")
-    columns[2].metric("Correlazione", "n/d" if not summary["correlation"] else f"{float(summary['correlation']):.2f}")
+    columns[2].metric("Correlazione", "n/d" if summary["correlation"] in ("", None) else f"{float(summary['correlation']):.2f}")
+    annualized = st.columns(2)
+    annualized[0].metric("Rendimento annualizzato ETF", f"{float(summary['etf_annualized_return']):.2%}")
+    annualized[1].metric("Rendimento annualizzato portafoglio", f"{float(summary['portfolio_annualized_return']):.2%}")
+    volatility = st.columns(2)
+    volatility[0].metric("Volatilità annualizzata ETF", "n/d" if not summary["etf_annualized_volatility"] else f"{float(summary['etf_annualized_volatility']):.2%}")
+    volatility[1].metric("Volatilità annualizzata portafoglio", "n/d" if not summary["portfolio_annualized_volatility"] else f"{float(summary['portfolio_annualized_volatility']):.2%}")
+    drawdowns = st.columns(2)
+    drawdowns[0].metric("Drawdown massimo ETF", f"{float(summary['etf_max_drawdown']):.2%}")
+    drawdowns[1].metric("Drawdown massimo portafoglio", f"{float(summary['portfolio_max_drawdown']):.2%}")
+    wins = st.columns(3)
+    wins[0].metric("Mesi vinti ETF", summary["etf_winning_months"])
+    wins[1].metric("Mesi vinti portafoglio", summary["portfolio_winning_months"])
+    wins[2].metric("Mesi pari", summary["tied_months"])
     chart = monthly.set_index("month")
     st.subheader("Crescita di 100 euro")
     st.line_chart(chart[["etf_cumulative_value", "portfolio_cumulative_value"]])
@@ -219,12 +242,18 @@ def _render_comparisons(paths: DashboardPaths, state: DashboardState) -> None:
     st.caption("La modalità monostrumento studia l'ETF selezionato senza modificare il portafoglio salvato.")
     if st.button("Calcola confronto", key="calculate_comparison", disabled=st.session_state.get("refreshing", False)):
         try:
-            st.session_state.comparison_output = str(publish_dashboard_comparison(paths, state, selected).output_dir)
+            st.session_state.comparison_cache = {
+                "target": selected,
+                "mode": mode,
+                "output": str(publish_dashboard_comparison(paths, state, selected).output_dir),
+            }
         except Exception as error:
             _show_error(error)
-    output = st.session_state.get("comparison_output")
+    cache = st.session_state.get("comparison_cache")
+    output = cache.get("output") if isinstance(cache, dict) and cache.get("target") == selected and cache.get("mode") == mode else None
     if output:
         try:
+            st.caption(f"Studio corrente: {selected} — {mode}")
             _render_comparison_report(Path(output))
         except Exception as error:
             _show_error(error)
