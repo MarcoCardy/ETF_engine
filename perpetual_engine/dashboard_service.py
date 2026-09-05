@@ -129,7 +129,6 @@ def search_etfs(
 
     isin_query = _ISIN_SHAPE_RE.fullmatch(query) is not None
     seen_tickers: set[str] = set()
-    seen_isins: set[str] = set()
     found: list[EtfCandidate] = []
     for raw_quote in quotes:
         if not isinstance(raw_quote, dict) or raw_quote.get("quoteType") != "ETF":
@@ -148,8 +147,6 @@ def search_etfs(
             continue
         if isin_query and isin != query:
             continue
-        if isin in seen_isins:
-            continue
         name = raw_quote.get("longname") or raw_quote.get("shortname")
         if not isinstance(name, str) or not name.strip() or len(name) > 100:
             continue
@@ -157,7 +154,6 @@ def search_etfs(
         if not isinstance(exchange, str) or not exchange.strip():
             continue
         exchange = exchange.strip()
-        seen_isins.add(isin)
         found.append(
             EtfCandidate(
                 name.strip(), ticker, isin, exchange, "EUR",
@@ -200,7 +196,7 @@ def remove_catalog_entry(state: DashboardState, study_id: str) -> DashboardState
     return DashboardState(state.components, tuple(item for item in state.catalog if item.study_id != study_id))
 
 
-def _exchange_for_ticker(ticker: str) -> str:
+def exchange_for_ticker(ticker: str) -> str:
     return {".MI": "Borsa Italiana", ".PA": "Euronext Paris"}.get(ticker[-3:], "")
 
 
@@ -210,7 +206,7 @@ def _catalog_from_study(study: StudySpec) -> CatalogEtf:
         study.name,
         study.ticker,
         study.isin,
-        _exchange_for_ticker(study.ticker),
+        exchange_for_ticker(study.ticker),
         study.quote_currency,
         study.identity_source_url,
     )
@@ -271,6 +267,7 @@ def _validate_catalog_entry(item: Any) -> None:
         or not valid_isin(item.isin)
         or not isinstance(item.exchange, str)
         or not item.exchange.strip()
+        or item.exchange != item.exchange.strip()
         or item.quote_currency != "EUR"
         or not isinstance(item.identity_source_url, str)
         or not item.identity_source_url.startswith("https://")
@@ -419,8 +416,15 @@ def save_dashboard_state(
     return Path(state_path)
 
 
-def reset_dashboard_state(default_config_path: Path, state_path: Path) -> DashboardState:
+def reset_dashboard_state(
+    default_config_path: Path,
+    state_path: Path,
+    *,
+    preserve_catalog: bool = True,
+) -> DashboardState:
     state = _default_state(Path(default_config_path))
+    if preserve_catalog:
+        state = replace(state, catalog=load_dashboard_state(default_config_path, state_path).catalog)
     save_dashboard_state(Path(state_path), state, default_config_path=Path(default_config_path))
     return state
 
@@ -507,6 +511,7 @@ def refresh_dashboard_data(
     *,
     downloader: Callable | None = None,
     retrieved_at: datetime | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> DashboardDataStatus:
     runtime = _runtime_config(paths, state)
     refresh_portfolio_prices(
@@ -514,6 +519,7 @@ def refresh_dashboard_data(
         project_root=paths.project_root,
         downloader=downloader,
         retrieved_at=retrieved_at,
+        progress=progress,
     )
     return current_data_status(paths, state)
 

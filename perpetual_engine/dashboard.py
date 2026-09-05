@@ -9,11 +9,13 @@ import pandas as pd
 import streamlit as st
 
 from perpetual_engine.dashboard_service import (
+    DashboardDataStatus,
     DashboardPaths,
     DashboardState,
     EtfCandidate,
     add_catalog_entry,
     current_data_status,
+    exchange_for_ticker,
     load_dashboard_state,
     publish_dashboard_comparison,
     refresh_dashboard_data,
@@ -21,8 +23,9 @@ from perpetual_engine.dashboard_service import (
     reset_dashboard_state,
     save_dashboard_state,
     search_etfs,
+    state_sha256,
 )
-from perpetual_engine.portfolio_monitor import ComponentSpec
+from perpetual_engine.portfolio_monitor import ComponentSpec, load_portfolio_config
 
 
 def _paths() -> DashboardPaths:
@@ -48,12 +51,19 @@ def _holding_rows(state: DashboardState) -> list[dict[str, object]]:
             "ID": item.component_id,
             "Simbolo": item.ticker,
             "ISIN": item.isin,
-            "Mercato": catalog.get(item.component_id).exchange if item.component_id in catalog else "",
+            "Mercato": catalog.get(item.component_id).exchange if item.component_id in catalog else exchange_for_ticker(item.ticker),
             "Valuta": item.quote_currency,
             "Peso %": item.weight * 100,
         }
         for item in state.components
     ]
+
+
+def _replace_portfolio_session(state: DashboardState) -> None:
+    _invalidate_comparison_cache()
+    st.session_state.portfolio_draft = _holding_rows(state)
+    st.session_state.portfolio_editor_generation = st.session_state.get("portfolio_editor_generation", 0) + 1
+    st.session_state.confirm_reset_requested = False
 
 
 def _candidate_state(state: DashboardState, rows: list[dict[str, object]]) -> DashboardState:
@@ -72,8 +82,12 @@ def _refresh(paths: DashboardPaths, state: DashboardState) -> None:
     st.session_state["refreshing"] = True
     succeeded = False
     try:
-        with st.status("Aggiornamento dati...", expanded=True):
-            refresh_dashboard_data(paths, state)
+        with st.status("Aggiornamento dati...", expanded=True) as indicator:
+            refresh_dashboard_data(
+                paths,
+                state,
+                progress=lambda ticker: indicator.update(label=f"Aggiornamento dati: {ticker}"),
+            )
         st.success("Dati aggiornati.")
         succeeded = True
     except Exception as error:
@@ -85,7 +99,7 @@ def _refresh(paths: DashboardPaths, state: DashboardState) -> None:
         st.rerun()
 
 
-def _render_status(paths: DashboardPaths, state: DashboardState) -> None:
+def _render_status(paths: DashboardPaths, state: DashboardState) -> DashboardDataStatus | None:
     try:
         status = current_data_status(paths, state)
     except Exception as error:
@@ -98,6 +112,7 @@ def _render_status(paths: DashboardPaths, state: DashboardState) -> None:
         st.sidebar.warning(status.reason or "Dati non disponibili.")
     if st.sidebar.button("Aggiorna dati", key="refresh_data", disabled=st.session_state.get("refreshing", False)):
         _refresh(paths, state)
+    return status
 
 
 def _render_portfolio(paths: DashboardPaths, state: DashboardState) -> None:
@@ -107,7 +122,7 @@ def _render_portfolio(paths: DashboardPaths, state: DashboardState) -> None:
     disabled = st.session_state.get("refreshing", False)
     draft = st.data_editor(
         pd.DataFrame(st.session_state.portfolio_draft),
-        key="portfolio_editor",
+        key=f"portfolio_editor_{st.session_state.get('portfolio_editor_generation', 0)}",
         disabled=True if disabled else ["ID", "Simbolo", "ISIN", "Mercato", "Valuta"],
         num_rows="fixed",
         column_config={"Peso %": st.column_config.NumberColumn("Peso %", min_value=0.0, format="%.2f")},
@@ -138,13 +153,11 @@ def _render_portfolio(paths: DashboardPaths, state: DashboardState) -> None:
         except Exception as error:
             _show_error(error)
     if st.button("Ripristina portafoglio predefinito", key="reset_portfolio", disabled=disabled):
-        st.session_state.confirm_reset = True
-    if st.session_state.get("confirm_reset") and st.button("Conferma ripristino", key="confirm_reset", disabled=disabled):
+        st.session_state.confirm_reset_requested = True
+    if st.session_state.get("confirm_reset_requested") and st.button("Conferma ripristino", key="confirm_reset_button", disabled=disabled):
         try:
             restored = reset_dashboard_state(paths.default_config, paths.state)
-            _invalidate_comparison_cache()
-            st.session_state.portfolio_draft = _holding_rows(restored)
-            st.session_state.confirm_reset = False
+            _replace_portfolio_session(restored)
             st.rerun()
         except Exception as error:
             _show_error(error)
@@ -158,6 +171,7 @@ def _render_etf(paths: DashboardPaths, state: DashboardState) -> None:
         st.text_input("Simbolo o ISIN", key="etf_query")
         searched = st.form_submit_button("Cerca", key="search_etf", disabled=disabled)
     if searched:
+        st.session_state.etf_candidates = ()
         try:
             st.session_state.etf_candidates = search_etfs(st.session_state.etf_query)
         except Exception as error:
@@ -194,7 +208,12 @@ def _render_etf(paths: DashboardPaths, state: DashboardState) -> None:
 
 def _csv_table(path: Path) -> pd.DataFrame:
     with path.open(newline="", encoding="utf-8") as source:
-        return pd.DataFrame(csv.DictReader(source))
+        table = pd.DataFrame(csv.DictReader(source))
+    if "month" in table:
+        table["month"] = pd.to_datetime(table["month"], format="%Y-%m-%d", errors="raise")
+        numeric = table.columns.drop("month")
+        table[numeric] = table[numeric].apply(pd.to_numeric, errors="raise")
+    return table
 
 
 def _render_comparison_report(output_dir: Path) -> None:
@@ -237,9 +256,13 @@ def _render_comparison_report(output_dir: Path) -> None:
         st.download_button(f"Scarica {name}", data=(output_dir / name).read_bytes(), file_name=name, mime="text/csv")
 
 
-def _render_comparisons(paths: DashboardPaths, state: DashboardState) -> None:
+def _render_comparisons(
+    paths: DashboardPaths,
+    state: DashboardState,
+    status: DashboardDataStatus | None,
+) -> None:
     st.header("Confronti")
-    choices = {item.component_id: item.component_id for item in state.components}
+    choices = {item.component_id: item.component_id for item in load_portfolio_config(paths.default_config).components}
     choices.update({item.study_id: f"{item.name} ({item.ticker})" for item in state.catalog})
     selected = st.selectbox("ETF da studiare", list(choices), format_func=choices.__getitem__, key="comparison_target")
     mode = st.radio(
@@ -248,17 +271,32 @@ def _render_comparisons(paths: DashboardPaths, state: DashboardState) -> None:
         key="comparison_mode",
     )
     st.caption("La modalità monostrumento studia l'ETF selezionato senza modificare il portafoglio salvato.")
-    if st.button("Calcola confronto", key="calculate_comparison", disabled=st.session_state.get("refreshing", False)):
+    current_vintage = status.vintage_id if status is not None and status.available else None
+    current_state = state_sha256(state)
+    if st.button(
+        "Calcola confronto",
+        key="calculate_comparison",
+        disabled=st.session_state.get("refreshing", False) or not current_vintage,
+    ):
         try:
             st.session_state.comparison_cache = {
                 "target": selected,
                 "mode": mode,
+                "state_sha256": current_state,
+                "vintage_id": current_vintage,
                 "output": str(publish_dashboard_comparison(paths, state, selected).output_dir),
             }
         except Exception as error:
             _show_error(error)
     cache = st.session_state.get("comparison_cache")
-    output = cache.get("output") if isinstance(cache, dict) and cache.get("target") == selected and cache.get("mode") == mode else None
+    output = cache.get("output") if (
+        current_vintage
+        and isinstance(cache, dict)
+        and cache.get("target") == selected
+        and cache.get("mode") == mode
+        and cache.get("state_sha256") == current_state
+        and cache.get("vintage_id") == current_vintage
+    ) else None
     if output:
         try:
             st.caption(f"Studio corrente: {selected} — {mode}")
@@ -283,20 +321,20 @@ def main(paths: DashboardPaths | None = None) -> None:
         _show_error(error)
         if st.button("Ripristina portafoglio predefinito", key="recover_state"):
             try:
-                reset_dashboard_state(paths.default_config, paths.state)
-                _invalidate_comparison_cache()
+                restored = reset_dashboard_state(paths.default_config, paths.state, preserve_catalog=False)
+                _replace_portfolio_session(restored)
                 st.rerun()
             except Exception as reset_error:
                 _show_error(reset_error)
         return
-    _render_status(paths, state)
+    status = _render_status(paths, state)
     section = st.sidebar.radio("Sezione", ("Portafoglio", "ETF", "Confronti", "Previsioni Chronos"), key="section")
     if section == "Portafoglio":
         _render_portfolio(paths, state)
     elif section == "ETF":
         _render_etf(paths, state)
     elif section == "Confronti":
-        _render_comparisons(paths, state)
+        _render_comparisons(paths, state, status)
     else:
         _render_chronos()
 

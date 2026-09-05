@@ -71,6 +71,41 @@ class DashboardStateTests(DashboardServiceFixture):
 
         self.assertEqual(load_dashboard_state(self.default_config, self.state_path), original)
 
+    def test_portfolio_reset_preserves_the_current_catalog(self):
+        from perpetual_engine.dashboard_service import (
+            EtfCandidate,
+            add_catalog_entry,
+            load_dashboard_state,
+            reset_dashboard_state,
+            save_dashboard_state,
+        )
+
+        original = load_dashboard_state(self.default_config, self.state_path)
+        changed = add_catalog_entry(
+            replace(original, components=(replace(original.components[0], weight=1.0),)),
+            EtfCandidate(
+                "Grid ETF", "GRID.MI", "IE000J80JTL1", "Milan", "EUR",
+                "https://finance.yahoo.com/quote/GRID.MI",
+            ),
+        )
+        save_dashboard_state(self.state_path, changed, default_config_path=self.default_config)
+
+        restored = reset_dashboard_state(self.default_config, self.state_path)
+
+        self.assertEqual(restored.components, original.components)
+        self.assertEqual(restored.catalog, changed.catalog)
+
+    def test_corrupted_state_can_be_fully_reset(self):
+        from perpetual_engine.dashboard_service import load_dashboard_state, reset_dashboard_state
+
+        self.state_path.parent.mkdir(parents=True)
+        self.state_path.write_bytes(b"{")
+
+        restored = reset_dashboard_state(self.default_config, self.state_path, preserve_catalog=False)
+
+        self.assertEqual(load_dashboard_state(self.default_config, self.state_path), restored)
+        self.assertEqual(tuple(item.component_id for item in restored.components), ("SWDA", "IWMO", "IWQU", "DBMFE"))
+
     def test_rejects_duplicate_ticker_and_isin(self):
         from perpetual_engine.dashboard_service import load_dashboard_state, save_dashboard_state
 
@@ -260,6 +295,33 @@ class DiscoveryAndCatalogTests(DashboardServiceFixture):
 
         self.assertEqual(run("GRID.MI", exchange="  Milan  ")[0].exchange, "Milan")
 
+    def test_search_keeps_distinct_listings_with_the_same_isin(self):
+        from perpetual_engine.dashboard_service import search_etfs
+
+        quotes = [
+            {"symbol": "GRID.MI", "quoteType": "ETF", "longname": "Grid ETF"},
+            {"symbol": "GRID.MI", "quoteType": "ETF", "longname": "Grid ETF duplicate"},
+            {"symbol": "GRID.PA", "quoteType": "ETF", "longname": "Grid ETF Paris"},
+        ]
+
+        class FakeTicker:
+            def __init__(self, ticker):
+                self.ticker = ticker
+
+            def get_history_metadata(self):
+                return {"currency": "EUR", "exchangeName": "Milan" if self.ticker.endswith(".MI") else "Paris"}
+
+            def get_isin(self):
+                return "IE000J80JTL1"
+
+        found = search_etfs(
+            "GRID",
+            search_factory=lambda value, **kwargs: SimpleNamespace(quotes=quotes),
+            ticker_factory=FakeTicker,
+        )
+
+        self.assertEqual(tuple(item.ticker for item in found), ("GRID.MI", "GRID.PA"))
+
     def test_catalog_mutations_are_immutable_and_persist_exchange(self):
         from perpetual_engine.dashboard_service import (
             EtfCandidate,
@@ -271,7 +333,7 @@ class DiscoveryAndCatalogTests(DashboardServiceFixture):
 
         original = load_dashboard_state(self.default_config, self.state_path)
         candidate = EtfCandidate(
-            "Grid ETF", "GRID.MI", "IE000J80JTL1", "Milan", "EUR",
+            "Grid ETF", "GRID.MI", "IE000J80JTL1", "  Milan  ", "EUR",
             "https://finance.yahoo.com/quote/GRID.MI",
         )
         changed = add_catalog_entry(original, candidate)
@@ -283,6 +345,18 @@ class DiscoveryAndCatalogTests(DashboardServiceFixture):
         self.assertEqual(changed.catalog[-1].ticker, "GRID.MI")
         save_dashboard_state(self.state_path, changed, default_config_path=self.default_config)
         self.assertEqual(load_dashboard_state(self.default_config, self.state_path).catalog[-1].exchange, "Milan")
+
+    def test_direct_catalog_exchange_must_already_be_normalized(self):
+        from perpetual_engine.dashboard_service import load_dashboard_state, save_dashboard_state
+
+        original = load_dashboard_state(self.default_config, self.state_path)
+        invalid = replace(
+            original,
+            catalog=(replace(original.catalog[0], exchange=f" {original.catalog[0].exchange} "),),
+        )
+
+        with self.assertRaisesRegex(ValueError, "identity"):
+            save_dashboard_state(self.state_path, invalid, default_config_path=self.default_config)
 
     def test_catalog_mutations_reject_duplicate_identity_and_held_removal(self):
         from perpetual_engine.dashboard_service import (
@@ -329,6 +403,28 @@ class DashboardOrchestrationTests(DashboardServiceFixture):
             refresh_dashboard_data(paths, state, downloader=lambda ticker: (_ for _ in ()).throw(ValueError(ticker)))
 
         self.assertEqual(first.pointer_path.read_bytes(), pointer)
+
+    def test_refresh_reports_each_current_instrument_before_download(self):
+        from perpetual_engine.dashboard_service import DashboardPaths, load_dashboard_state, refresh_dashboard_data
+
+        paths = DashboardPaths.from_root(self.root)
+        state = load_dashboard_state(self.default_config, self.state_path)
+        payloads = self.price_payloads()
+        current: list[str] = []
+
+        def downloader(ticker: str) -> bytes:
+            self.assertEqual(current[-1], ticker)
+            return payloads[ticker]
+
+        refresh_dashboard_data(
+            paths,
+            state,
+            downloader=downloader,
+            retrieved_at=self.retrieved_at,
+            progress=current.append,
+        )
+
+        self.assertEqual(current, ["SWDA.MI", "IWMO.MI", "IWQU.MI", "DBMFE.PA", "TEST.MI"])
 
     def test_publication_is_immutable_and_reconciles_contributions(self):
         from perpetual_engine.dashboard_service import (

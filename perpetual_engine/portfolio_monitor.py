@@ -442,6 +442,7 @@ def refresh_portfolio_prices(
     project_root: Path | None = None,
     downloader: Callable | None = None,
     retrieved_at: datetime | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> str:
     config = load_portfolio_config(path, project_root=project_root)
     retrieved_at = retrieved_at or datetime.now(timezone.utc)
@@ -474,6 +475,8 @@ def refresh_portfolio_prices(
         sources: list[dict[str, str]] = []
         expected = _source_specs(config)
         for source_id, ticker in expected:
+            if progress is not None:
+                progress(ticker)
             payload = download(ticker)
             _daily_rows(payload, ticker)
             raw_path = stage / "raw" / f"{source_id}.csv"
