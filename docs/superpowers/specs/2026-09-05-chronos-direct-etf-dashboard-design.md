@@ -328,6 +328,26 @@ Tests use a deterministic fake Chronos predictor except for the explicit real-mo
 - refresh prices after at least one forecasted month is available and verify forecast-versus-real and pending rows;
 - run the full existing test suite to confirm the historical dashboard and fixed four-sleeve Chronos CLI remain unchanged.
 
+## Final user manual
+
+After implementation and final verification, the project delivers an Italian user manual at `docs/manuale-utente.md`. It is written for a non-technical user and organized into numbered chapters and paragraphs. At minimum it explains:
+
+1. how to start and close the local application from the desktop;
+2. the difference between the historical view and the Chronos view;
+3. how the immutable base portfolio and editable four-ETF candidate portfolio work;
+4. how to add or replace an ETF using a symbol or ISIN, confirm it, set valid weights, and restore the default composition;
+5. when and how to use **Aggiorna dati Chronos**, including the fact that no refresh occurs automatically;
+6. how to generate and read the three ECB scenario forecasts for each ETF and for both portfolios;
+7. how to interpret `q10`, `q50`, `q90`, the EUR 100 central paths, short-history warnings, and the absence of a portfolio probability band;
+8. how to start **Valuta variabili**, close and reopen the page while it runs, read its status, and retry an interrupted job;
+9. how to interpret `USEFUL`, `HARMFUL`, `INCONCLUSIVE`, `INSUFFICIENT_HISTORY`, volatility diagnostics, and the limits of those classifications;
+10. how forecast-versus-real tracking works as new complete months become available;
+11. how to download and identify the CSV and provenance files;
+12. common problems and corrective actions for missing data, stale data, insufficient history, invalid weights, unresolved identifiers, model-cache errors, and interrupted evaluations;
+13. the research-only limitations, including that scenarios are not promises and the application never trades or changes weights automatically.
+
+Every instruction uses the final interface labels and verified behavior. The manual includes a compact first-use walkthrough and a glossary, but does not duplicate implementation details that a normal user does not need.
+
 ## Acceptance criteria
 
-The feature is accepted when a non-technical user can open the local page, keep the base portfolio visible, define and confirm four saved ETFs by symbol or ISIN, explicitly refresh data, generate direct ETF and portfolio scenario forecasts, close the page while variable evaluation continues, reopen it to see progress or results, download the supporting CSV files, and later see predicted-versus-real errors—without any automatic network access, proxy substitution, hidden component omission, or trading action.
+The feature is accepted when a non-technical user can open the local page, keep the base portfolio visible, define and confirm four saved ETFs by symbol or ISIN, explicitly refresh data, generate direct ETF and portfolio scenario forecasts, close the page while variable evaluation continues, reopen it to see progress or results, download the supporting CSV files, and later see predicted-versus-real errors—without any automatic network access, proxy substitution, hidden component omission, or trading action. Acceptance also requires the final Italian user manual to match the verified interface and workflow.
