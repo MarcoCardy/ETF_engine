@@ -13,7 +13,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from perpetual_engine.dashboard_service import DashboardPaths, DashboardState, _atomic_write
+from perpetual_engine.dashboard_service import DashboardPaths, DashboardState, _atomic_write, exchange_for_ticker
 from perpetual_engine.io import canonical_json
 from perpetual_engine.portfolio_monitor import ComponentSpec, load_current_portfolio_prices, load_portfolio_config
 
@@ -58,15 +58,11 @@ class DirectTargetSnapshot:
     retrieved_at: datetime
 
 
-def _exchange(ticker: str) -> str:
-    return {".MI": "Borsa Italiana", ".PA": "Euronext Paris"}.get(ticker[-3:], "")
-
-
 def _direct_component(source: ComponentSpec | Any, *, name: str | None = None, exchange: str | None = None, weight: float | None = None) -> DirectComponent:
     return DirectComponent(
         source.component_id if isinstance(source, ComponentSpec) else source.study_id,
         name if name is not None else (source.component_id if isinstance(source, ComponentSpec) else source.name),
-        source.ticker, source.isin, exchange if exchange is not None else _exchange(source.ticker),
+        source.ticker, source.isin, exchange if exchange is not None else exchange_for_ticker(source.ticker),
         source.quote_currency, getattr(source, "weight", 0.0) if weight is None else weight,
     )
 
@@ -183,16 +179,17 @@ def _monthly_returns(prices: Mapping[date, float], staleness: int, as_of: date) 
         if observation is not None:
             selected[month] = observation[1]
         month = _next_month_end(month)
-    result_months: list[date] = []
-    returns: list[float] = []
-    for month in sorted(selected):
-        previous = _month_end(date(month.year, month.month, 1) - timedelta(days=1))
-        if previous in selected:
-            value = selected[month] / selected[previous] - 1.0
-            if not math.isfinite(value):
-                raise ValueError("ETF monthly return is not finite")
-            result_months.append(month)
-            returns.append(value)
+    contiguous = [max(selected)] if selected else []
+    while contiguous:
+        previous = _month_end(date(contiguous[-1].year, contiguous[-1].month, 1) - timedelta(days=1))
+        if previous not in selected:
+            break
+        contiguous.append(previous)
+    contiguous.reverse()
+    result_months = contiguous[1:]
+    returns = [selected[month] / selected[previous] - 1.0 for previous, month in zip(contiguous, contiguous[1:])]
+    if any(not math.isfinite(value) for value in returns):
+        raise ValueError("ETF monthly return is not finite")
     return tuple(result_months), np.asarray(returns, dtype=float)
 
 
@@ -221,9 +218,12 @@ def load_etf_target_snapshot(paths: DashboardPaths, state: DashboardState) -> Di
     unbounded: list[tuple[DirectComponent, tuple[date, ...], np.ndarray]] = []
     for component in components:
         if component.ticker not in raw:
-            raise ValueError("ETF price history is unavailable")
+            raise ValueError(f"{component.ticker}: 0 observed monthly returns; price history is unavailable")
         monthly, returns = _monthly_returns(raw[component.ticker], config.max_staleness_days, retrieved_at.date())
         unbounded.append((component, monthly, returns))
+    for component, _monthly, returns in unbounded:
+        if len(returns) < 12:
+            raise ValueError(f"{component.ticker}: {len(returns)} observed monthly returns; DATI_INSUFFICIENTI")
     common = set(unbounded[0][1])
     for _component, monthly, _returns in unbounded[1:]:
         common.intersection_update(monthly)
@@ -236,7 +236,9 @@ def load_etf_target_snapshot(paths: DashboardPaths, state: DashboardState) -> Di
         kept_months = tuple(month for month, _value in kept)
         kept_returns = np.asarray([value for _month, value in kept], dtype=float)
         if len(kept_returns) < 12:
-            raise ValueError("ETF has DATI_INSUFFICIENTI history at the common origin")
+            raise ValueError(
+                f"{component.ticker}: {len(kept_returns)} observed monthly returns; DATI_INSUFFICIENTI at common origin"
+            )
         series.append(EtfTargetSeries(
             component, kept_months, kept_returns, "STORICO_BREVE" if len(kept_returns) < 60 else "SUFFICIENT_HISTORY",
             hashlib.sha256(_series_csv(kept_months, kept_returns)).hexdigest(),
