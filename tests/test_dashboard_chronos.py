@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import hashlib
+import csv
 import json
 import math
 from datetime import date, datetime, timezone
 from dataclasses import replace
+from pathlib import Path
 from unittest.mock import patch
+
+import numpy as np
 
 from perpetual_engine.dashboard_service import DashboardPaths, load_dashboard_state, refresh_dashboard_data
 from perpetual_engine.io import canonical_json
 from tests.test_dashboard_service import DashboardServiceFixture
 from tests.test_portfolio_monitor import daily_bytes, months, prices_from_returns
+
+
+_USE_FAKE_PREDICTOR = object()
 
 
 class DirectChronosFixture(DashboardServiceFixture):
@@ -23,6 +30,7 @@ class DirectChronosFixture(DashboardServiceFixture):
         }]
         self.default_config.write_bytes(canonical_json(payload))
         self.paths = DashboardPaths.from_root(self.root)
+        self.paths.chronos_config.write_bytes(Path("config/chronos_v1.json").read_bytes())
         self.state = load_dashboard_state(self.paths.default_config, self.paths.state)
         self.retrieved_at = datetime(2026, 3, 2, tzinfo=timezone.utc)
 
@@ -56,6 +64,35 @@ class DirectChronosFixture(DashboardServiceFixture):
             ticker: daily_bytes(list(prices_from_returns(dates, (0.01,) * (len(dates) - 1)).items()))
             for ticker, dates in dates_by_ticker.items()
         }
+
+    def state_with_grid_candidate(self):
+        from perpetual_engine.dashboard_chronos import save_candidate_portfolio
+
+        save_candidate_portfolio(
+            self.paths, self.state,
+            self.rows(("SWDA", 0.55), ("IWMO", 0.15), ("IWQU", 0.15), ("GRID", 0.15)),
+        )
+        return self.state
+
+    def covariates(self):
+        from perpetual_engine.chronos_data import MonthlyTable, REQUIRED_V1_COVARIATES
+
+        dates = months(62, date(2021, 1, 31))[1:]
+        values = np.vstack([
+            np.arange(len(dates), dtype=float) + offset * 100.0
+            for offset in range(len(REQUIRED_V1_COVARIATES))
+        ])
+        return MonthlyTable(dates, REQUIRED_V1_COVARIATES, values)
+
+    @staticmethod
+    def forecast_predictor(items, prediction_length, quantile_levels):
+        assert prediction_length == 12
+        assert quantile_levels == [0.1, 0.5, 0.9]
+        results = []
+        for index, _item in enumerate(items):
+            median = 0.01 * (index // 3 + 1) + 0.001 * (index % 3)
+            results.append(np.tile(np.asarray([[[median - 0.01, median, median + 0.01]]]), (1, 12, 1)))
+        return results
 
 
 class DirectPortfolioTests(DirectChronosFixture):
@@ -239,3 +276,162 @@ class DirectTargetTests(DirectChronosFixture):
                 f"{month.isoformat()},{float(value):.17g}\n" for month, value in zip(series.months, series.returns)
             )).encode()
             self.assertEqual(series.series_sha256, hashlib.sha256(expected).hexdigest())
+
+
+class DirectForecastTests(DirectChronosFixture):
+    def setUp(self):
+        super().setUp()
+        self.refresh_prices()
+        self.state_with_grid_candidate()
+        self.macro_vintage_id = "a" * 64
+
+    def publish(self, *, predictor=_USE_FAKE_PREDICTOR, issued_at=datetime(2026, 3, 3, tzinfo=timezone.utc)):
+        from perpetual_engine.dashboard_chronos import publish_direct_forecast
+
+        with patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_table",
+            return_value=(self.covariates(), self.macro_vintage_id),
+        ):
+            return publish_direct_forecast(
+                self.paths,
+                self.state,
+                predictor=self.forecast_predictor if predictor is _USE_FAKE_PREDICTOR else predictor,
+                issued_at=issued_at,
+            )
+
+    @staticmethod
+    def csv_rows(path):
+        with path.open(newline="", encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))
+
+    def test_direct_forecast_batches_unique_etfs_once_preserves_histories_and_has_only_future_ecb(self):
+        calls = []
+
+        def predictor(items, prediction_length, quantile_levels):
+            calls.append(items)
+            return self.forecast_predictor(items, prediction_length, quantile_levels)
+
+        result = self.publish(predictor=predictor)
+        forecasts = self.csv_rows(result.output_dir / "etf_forecast.csv")
+        paths = self.csv_rows(result.output_dir / "portfolio_paths.csv")
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(calls[0]), 15)
+        self.assertEqual([item["target"].shape[1] for item in calls[0][::3]], [61, 61, 61, 61, 49])
+        for item in calls[0]:
+            self.assertEqual(tuple(item["past_covariates"]), (
+                "ECB_DFR", "US_TREASURY_10Y", "BRENT_RETURN", "BIS_USD_CREDIT_YOY", "US_CPI_YOY",
+            ))
+            self.assertEqual(tuple(item["future_covariates"]), ("ECB_DFR",))
+            self.assertEqual(item["future_covariates"]["ECB_DFR"].shape, (12,))
+        self.assertEqual(len(forecasts), 5 * 3 * 12)
+        self.assertEqual(set(paths[0]), {
+            "portfolio", "scenario", "forecast_month", "horizon", "central_return", "cumulative_eur_100",
+        })
+        self.assertNotIn("q10", paths[0])
+        self.assertNotIn("q90", paths[0])
+        self.assertEqual({row["portfolio"] for row in paths}, {"CANDIDATE", "BASE"})
+        candidate = next(row for row in paths if row["portfolio"] == "CANDIDATE" and row["scenario"] == "ECB_FLAT" and row["horizon"] == "1")
+        base = next(row for row in paths if row["portfolio"] == "BASE" and row["scenario"] == "ECB_FLAT" and row["horizon"] == "1")
+        self.assertAlmostEqual(float(candidate["central_return"]), 0.019)
+        self.assertAlmostEqual(float(candidate["cumulative_eur_100"]), 101.9)
+        candidate_second = next(row for row in paths if row["portfolio"] == "CANDIDATE" and row["scenario"] == "ECB_FLAT" and row["horizon"] == "2")
+        self.assertAlmostEqual(float(candidate_second["cumulative_eur_100"]), 100.0 * 1.019**2)
+        self.assertAlmostEqual(float(base["central_return"]), 0.0185)
+        self.assertEqual({path.name for path in result.output_dir.iterdir()}, {
+            "etf_forecast.csv", "portfolio_paths.csv", "scenario_sensitivity.csv", "volatility_snapshot.csv", "manifest.json",
+        })
+
+    def test_direct_forecast_rejects_bad_result_count_shape_values_and_quantile_order_with_ticker(self):
+        good = np.zeros((1, 12, 3))
+        bad_results = (
+            [good] * 14,
+            [np.zeros((1, 11, 3)), *([good] * 14)],
+            [np.full((1, 12, 3), np.nan), *([good] * 14)],
+            [np.tile(np.asarray([[[1.0, 0.0, 2.0]]]), (1, 12, 1)), *([good] * 14)],
+        )
+        for raw in bad_results:
+            with self.subTest(count=len(raw), shape=np.asarray(raw[0]).shape), self.assertRaisesRegex(ValueError, r"SWDA\.MI"):
+                self.publish(predictor=lambda *_args, raw=raw, **_kwargs: raw)
+            self.assertFalse((self.paths.chronos_output_root / "forecasts").exists())
+
+    def test_direct_forecast_rejects_one_invalid_component_without_renormalizing(self):
+        from perpetual_engine import dashboard_chronos
+        from perpetual_engine.portfolio_monitor import load_current_portfolio_prices
+
+        from perpetual_engine.dashboard_service import materialize_runtime_config
+        materialize_runtime_config(
+            self.paths.default_config, self.state, self.paths.runtime_config, project_root=self.paths.project_root,
+        )
+        config, raw, manifest = load_current_portfolio_prices(self.paths.runtime_config, project_root=self.paths.project_root)
+        raw.pop("GRID.MI")
+        with patch.object(dashboard_chronos, "load_current_portfolio_prices", return_value=(config, raw, manifest)), patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_table",
+            return_value=(self.covariates(), self.macro_vintage_id),
+        ), self.assertRaisesRegex(ValueError, r"GRID\.MI"):
+            dashboard_chronos.publish_direct_forecast(
+                self.paths, self.state, predictor=self.forecast_predictor,
+            )
+        self.assertFalse((self.paths.chronos_output_root / "forecasts").exists())
+
+    def test_direct_forecast_identity_manifest_sensitivity_and_byte_identical_reuse(self):
+        from perpetual_engine.dashboard_chronos import read_direct_forecast, save_candidate_portfolio
+
+        first = self.publish()
+        original = {path.name: path.read_bytes() for path in first.output_dir.iterdir()}
+        manifest, rows = read_direct_forecast(first.output_dir, self.paths.chronos_output_root)
+        self.assertEqual(len(rows), 180)
+        self.assertEqual(manifest["forecast_id"], first.forecast_id)
+        price_manifest = (
+            self.root / "data" / "portfolio_p_v1" / "vintages"
+            / manifest["price_vintage"]["vintage_id"] / "manifest.json"
+        )
+        self.assertEqual(
+            manifest["price_vintage"]["manifest_sha256"], hashlib.sha256(price_manifest.read_bytes()).hexdigest(),
+        )
+        self.assertEqual(tuple(item["ticker"] for item in manifest["target_series"]), (
+            "SWDA.MI", "IWMO.MI", "IWQU.MI", "GRID.MI", "DBMFE.PA",
+        ))
+        self.assertEqual(manifest["macro_vintage_id"], self.macro_vintage_id)
+        self.assertEqual(manifest["warnings"], [{"symbol": "DBMFE.PA", "warning": "STORICO_BREVE"}])
+        self.assertEqual(set(manifest["generated_sha256"]), {
+            "etf_forecast.csv", "portfolio_paths.csv", "scenario_sensitivity.csv", "volatility_snapshot.csv",
+        })
+        for name, digest in manifest["generated_sha256"].items():
+            self.assertEqual(hashlib.sha256((first.output_dir / name).read_bytes()).hexdigest(), digest)
+
+        repeated = self.publish(
+            predictor=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("existing forecast must be reused")),
+            issued_at=datetime(2026, 3, 4, tzinfo=timezone.utc),
+        )
+        self.assertEqual(repeated.forecast_id, first.forecast_id)
+        self.assertEqual(original, {path.name: path.read_bytes() for path in repeated.output_dir.iterdir()})
+
+        (first.output_dir / "etf_forecast.csv").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "hash"):
+            self.publish()
+        for name, content in original.items():
+            (first.output_dir / name).write_bytes(content)
+
+        save_candidate_portfolio(
+            self.paths, self.state,
+            self.rows(("SWDA", 0.50), ("IWMO", 0.20), ("IWQU", 0.15), ("GRID", 0.15)),
+        )
+        changed = self.publish()
+        self.assertNotEqual(changed.forecast_id, first.forecast_id)
+
+    def test_direct_forecast_loads_predictor_once_and_publishes_etf_and_portfolio_sensitivity(self):
+        loader_calls = []
+
+        def load_predictor(config):
+            loader_calls.append(config)
+            return self.forecast_predictor
+
+        with patch("perpetual_engine.dashboard_chronos.load_chronos_predictor", side_effect=load_predictor):
+            result = self.publish(predictor=None)
+
+        self.assertEqual(len(loader_calls), 1)
+        sensitivity = self.csv_rows(result.output_dir / "scenario_sensitivity.csv")
+        self.assertEqual({row["scope"] for row in sensitivity}, {"ETF", "PORTFOLIO"})
+        portfolio = next(row for row in sensitivity if row["scope"] == "PORTFOLIO" and row["portfolio"] == "CANDIDATE" and row["scenario"] == "ECB_DOWN_100BP" and row["horizon"] == "1")
+        self.assertAlmostEqual(float(portfolio["q50_delta"]), 0.001)
