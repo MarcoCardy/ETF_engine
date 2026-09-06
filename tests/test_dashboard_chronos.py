@@ -521,3 +521,117 @@ class DirectForecastTests(DirectChronosFixture):
         manifest_path.write_bytes(canonical_json(manifest))
         with self.assertRaisesRegex(ValueError, "warning"):
             read_direct_forecast(result.output_dir, self.paths.chronos_output_root)
+
+
+class DirectReconciliationTests(DirectChronosFixture):
+    def setUp(self):
+        super().setUp()
+        self.refresh_prices()
+        self.state_with_grid_candidate()
+        self.macro_vintage_id = "a" * 64
+
+    def publish_known_forecast(self):
+        from perpetual_engine.dashboard_chronos import publish_direct_forecast
+
+        with patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_table",
+            return_value=(self.covariates(), self.macro_vintage_id),
+        ):
+            return publish_direct_forecast(
+                self.paths, self.state, predictor=self.forecast_predictor,
+                issued_at=datetime(2026, 3, 3, tzinfo=timezone.utc),
+            )
+
+    def add_march_returns(self):
+        dates = (*months(62, date(2021, 1, 31)), date(2026, 3, 31))
+        payloads = {}
+        for ticker in self.current_prices():
+            returns = [0.01] * (len(dates) - 1)
+            if ticker == "SWDA.MI":
+                returns[-1] = 0.03
+            payloads[ticker] = daily_bytes(list(prices_from_returns(dates, tuple(returns)).items()))
+        self.retrieved_at = datetime(2026, 4, 2, tzinfo=timezone.utc)
+        self.refresh_prices(payloads)
+
+    @staticmethod
+    def csv_rows(path):
+        with path.open(newline="", encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))
+
+    def test_reconciliation_records_actual_minus_q50_and_keeps_future_rows_pending(self):
+        from perpetual_engine.dashboard_chronos import MONITORING_COLUMNS, reconcile_direct_forecasts
+
+        forecast = self.publish_known_forecast()
+        self.add_march_returns()
+        monitoring = reconcile_direct_forecasts(self.paths, self.state)
+        actual = self.csv_rows(monitoring / "forecast_vs_actual.csv")
+        row = next(
+            item for item in actual
+            if item["scope"] == "ETF" and item["symbol"] == "SWDA.MI"
+            and item["scenario"] == "ECB_FLAT" and item["horizon"] == "1"
+        )
+        self.assertEqual(row["forecast_id"], forecast.forecast_id)
+        self.assertAlmostEqual(float(row["signed_error"]), 0.02)
+        self.assertAlmostEqual(float(row["absolute_error"]), 0.02)
+        self.assertAlmostEqual(float(row["squared_error"]), 0.0004)
+        self.assertEqual(tuple(row), MONITORING_COLUMNS)
+        pending = self.csv_rows(monitoring / "pending_forecasts.csv")
+        self.assertEqual(tuple(pending[0]), MONITORING_COLUMNS)
+        self.assertIn("2026-04-30", {item["forecast_month"] for item in pending})
+        metrics = self.csv_rows(monitoring / "live_metrics.csv")
+        component = next(item for item in metrics if item["scope"] == "ETF" and item["symbol"] == "SWDA.MI")
+        self.assertEqual(component["count"], "1")
+        self.assertNotEqual(component["interval_80_coverage"], "")
+
+    def test_reconciliation_uses_archived_weights_for_candidate_and_base(self):
+        from perpetual_engine.dashboard_chronos import reconcile_direct_forecasts, save_candidate_portfolio
+
+        forecast = self.publish_known_forecast()
+        save_candidate_portfolio(
+            self.paths, self.state,
+            self.rows(("SWDA", 0.50), ("IWMO", 0.20), ("IWQU", 0.15), ("GRID", 0.15)),
+        )
+        self.add_march_returns()
+        monitoring = reconcile_direct_forecasts(self.paths, self.state)
+        row = next(
+            item for item in self.csv_rows(monitoring / "forecast_vs_actual.csv")
+            if item["scope"] == "CANDIDATE_PORTFOLIO" and item["scenario"] == "ECB_FLAT"
+            and item["horizon"] == "1"
+        )
+        self.assertEqual(row["portfolio_sha256"], forecast.candidate_sha256)
+        self.assertAlmostEqual(float(row["q50"]), 0.019)
+        self.assertEqual((row["q10"], row["q90"], row["interval_hit"]), ("", "", ""))
+
+    def test_reconciliation_rejects_tampered_forecast_before_publishing_monitoring(self):
+        from perpetual_engine.dashboard_chronos import reconcile_direct_forecasts
+
+        forecast = self.publish_known_forecast()
+        monitoring_root = self.paths.chronos_output_root / "monitoring"
+        before = {path.name for path in monitoring_root.iterdir()}
+        (forecast.output_dir / "etf_forecast.csv").write_text("tampered", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "hash"):
+            reconcile_direct_forecasts(self.paths, self.state)
+        self.assertEqual({path.name for path in monitoring_root.iterdir()}, before)
+
+    def test_forecast_publication_keeps_its_archive_when_reconciliation_fails(self):
+        from perpetual_engine.dashboard_chronos import (
+            publish_direct_forecast, read_direct_forecast, save_candidate_portfolio,
+        )
+
+        old = self.publish_known_forecast()
+        (old.output_dir / "etf_forecast.csv").write_text("tampered", encoding="utf-8")
+        save_candidate_portfolio(
+            self.paths, self.state,
+            self.rows(("SWDA", 0.50), ("IWMO", 0.20), ("IWQU", 0.15), ("GRID", 0.15)),
+        )
+        with patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_table",
+            return_value=(self.covariates(), self.macro_vintage_id),
+        ), self.assertRaisesRegex(ValueError, "hash"):
+            publish_direct_forecast(
+                self.paths, self.state, predictor=self.forecast_predictor,
+                issued_at=datetime(2026, 3, 3, tzinfo=timezone.utc),
+            )
+        archives = sorted((self.paths.chronos_output_root / "forecasts").iterdir())
+        self.assertEqual(len(archives), 2)
+        read_direct_forecast(next(path for path in archives if path != old.output_dir), self.paths.chronos_output_root)

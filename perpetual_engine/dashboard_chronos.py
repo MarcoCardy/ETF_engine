@@ -524,6 +524,16 @@ _VOLATILITY_COLUMNS = (
     "scenario", "forecast_month", "horizon", "interval_width",
 )
 _DIRECT_FILES = {"etf_forecast.csv", "portfolio_paths.csv", "scenario_sensitivity.csv", "volatility_snapshot.csv", "manifest.json"}
+MONITORING_COLUMNS = (
+    "forecast_id", "issued_at", "origin", "scope", "portfolio_sha256",
+    "scenario", "symbol", "isin", "forecast_month", "horizon",
+    "q10", "q50", "q90", "actual", "signed_error",
+    "absolute_error", "squared_error", "interval_hit",
+)
+_METRIC_COLUMNS = (
+    "scope", "scenario", "symbol", "isin", "portfolio_sha256", "horizon",
+    "count", "bias", "mae", "rmse", "interval_80_coverage",
+)
 
 
 def _component_from_payload(value: object, label: str) -> DirectComponent:
@@ -749,6 +759,212 @@ def read_direct_forecast(path: Path, output_root: Path) -> tuple[dict[str, Any],
     return manifest, rows
 
 
+def _direct_forecast_archives(output_root: Path) -> tuple[tuple[dict[str, Any], tuple[dict[str, str], ...], str], ...]:
+    forecast_root = output_root / "forecasts"
+    if not forecast_root.exists():
+        return ()
+    if (
+        forecast_root.is_symlink() or not forecast_root.is_dir()
+        or forecast_root.resolve().parent != output_root
+    ):
+        raise ValueError("direct forecast root is not a real direct child of output root")
+    archives = []
+    for archive in sorted(forecast_root.iterdir(), key=lambda item: item.name):
+        if archive.is_symlink() or not archive.is_dir() or archive.resolve().parent != forecast_root.resolve():
+            raise ValueError("direct forecast archive is not a real direct child of forecast root")
+        manifest, rows = read_direct_forecast(archive, output_root)
+        archives.append((manifest, rows, hashlib.sha256((archive / "manifest.json").read_bytes()).hexdigest()))
+    return tuple(archives)
+
+
+def _current_price_vintage(
+    paths: DashboardPaths,
+    state: DashboardState,
+) -> tuple[dict[str, dict[date, float]], Any, datetime, str, str]:
+    from perpetual_engine.dashboard_service import materialize_runtime_config
+
+    runtime = materialize_runtime_config(
+        paths.default_config, state, paths.runtime_config, project_root=paths.project_root,
+    )
+    config, raw, manifest = load_current_portfolio_prices(runtime, project_root=paths.project_root)
+    try:
+        vintage_id = manifest["vintage_id"]
+        retrieved_at = _parse_utc(manifest["retrieved_at"], "price vintage retrieved_at")
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("current price vintage is malformed") from error
+    if not _is_sha256(vintage_id):
+        raise ValueError("current price vintage identity is invalid")
+    vintage = (config.data_root / "vintages" / vintage_id).resolve()
+    if vintage.parent != (config.data_root / "vintages").resolve():
+        raise ValueError("current price vintage escapes its data root")
+    manifest_path = vintage / "manifest.json"
+    if not manifest_path.is_file() or manifest_path.resolve().parent != vintage:
+        raise ValueError("current price vintage manifest is missing")
+    return raw, config, retrieved_at, vintage_id, hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+
+
+def _actual_returns(
+    archives: tuple[tuple[dict[str, Any], tuple[dict[str, str], ...], str], ...],
+    raw: Mapping[str, Mapping[date, float]],
+    config: Any,
+    retrieved_at: datetime,
+) -> dict[str, dict[date, float]]:
+    symbols = {
+        row["symbol"]
+        for _manifest, rows, _manifest_hash in archives
+        for row in rows
+    }
+    actuals = {}
+    for symbol in sorted(symbols):
+        if symbol not in raw:
+            raise ValueError(f"{symbol}: current price vintage is missing archived ETF history")
+        months, returns = _monthly_returns(raw[symbol], config.max_staleness_days, retrieved_at.date())
+        actuals[symbol] = dict(zip(months, returns))
+    return actuals
+
+
+def _monitoring_row(
+    *,
+    forecast_id: str,
+    issued_at: str,
+    origin: str,
+    scope: str,
+    portfolio_sha256: str,
+    scenario: str,
+    symbol: str,
+    isin: str,
+    forecast_month: str,
+    horizon: int,
+    q10: float | str,
+    q50: float,
+    q90: float | str,
+    actual: float | None,
+) -> dict[str, object]:
+    if actual is None:
+        return {
+            "forecast_id": forecast_id, "issued_at": issued_at, "origin": origin, "scope": scope,
+            "portfolio_sha256": portfolio_sha256, "scenario": scenario, "symbol": symbol, "isin": isin,
+            "forecast_month": forecast_month, "horizon": horizon, "q10": q10, "q50": q50, "q90": q90,
+            "actual": "", "signed_error": "", "absolute_error": "", "squared_error": "", "interval_hit": "",
+        }
+    error = actual - q50
+    return {
+        "forecast_id": forecast_id, "issued_at": issued_at, "origin": origin, "scope": scope,
+        "portfolio_sha256": portfolio_sha256, "scenario": scenario, "symbol": symbol, "isin": isin,
+        "forecast_month": forecast_month, "horizon": horizon, "q10": q10, "q50": q50, "q90": q90,
+        "actual": actual, "signed_error": error, "absolute_error": abs(error), "squared_error": error * error,
+        "interval_hit": "" if scope != "ETF" else str(q10 <= actual <= q90).lower(),
+    }
+
+
+def _reconciled_direct_rows(
+    archives: tuple[tuple[dict[str, Any], tuple[dict[str, str], ...], str], ...],
+    actuals: Mapping[str, Mapping[date, float]],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    realized: list[dict[str, object]] = []
+    pending: list[dict[str, object]] = []
+    for manifest, rows, _manifest_hash in archives:
+        by_key = {(row["symbol"], row["scenario"], int(row["horizon"])): row for row in rows}
+        for row in rows:
+            month = date.fromisoformat(row["forecast_month"])
+            output = _monitoring_row(
+                forecast_id=manifest["forecast_id"], issued_at=manifest["issued_at"], origin=manifest["common_origin"],
+                scope="ETF", portfolio_sha256="", scenario=row["scenario"], symbol=row["symbol"], isin=row["isin"],
+                forecast_month=row["forecast_month"], horizon=int(row["horizon"]), q10=float(row["q10"]),
+                q50=float(row["q50"]), q90=float(row["q90"]), actual=actuals[row["symbol"]].get(month),
+            )
+            (realized if output["actual"] != "" else pending).append(output)
+        for scope, key, digest in (
+            ("CANDIDATE_PORTFOLIO", "candidate", manifest["candidate_sha256"]),
+            ("BASE_PORTFOLIO", "base", manifest["base_sha256"]),
+        ):
+            portfolio = _portfolio_from_payload(manifest["portfolios"][key], key)
+            for scenario in SCENARIO_NAMES:
+                for horizon in range(1, 13):
+                    selected = [by_key[(component.ticker, scenario, horizon)] for component in portfolio.components]
+                    month = date.fromisoformat(selected[0]["forecast_month"])
+                    q50 = sum(component.weight * float(row["q50"]) for component, row in zip(portfolio.components, selected))
+                    values = [actuals[component.ticker].get(month) for component in portfolio.components]
+                    actual = None if any(value is None for value in values) else sum(
+                        component.weight * value for component, value in zip(portfolio.components, values)
+                    )
+                    output = _monitoring_row(
+                        forecast_id=manifest["forecast_id"], issued_at=manifest["issued_at"], origin=manifest["common_origin"],
+                        scope=scope, portfolio_sha256=digest, scenario=scenario, symbol="", isin="",
+                        forecast_month=selected[0]["forecast_month"], horizon=horizon, q10="", q50=q50, q90="", actual=actual,
+                    )
+                    (realized if output["actual"] != "" else pending).append(output)
+    sort_key = lambda row: (row["forecast_id"], row["scope"], row["scenario"], row["symbol"], row["horizon"])
+    return sorted(realized, key=sort_key), sorted(pending, key=sort_key)
+
+
+def _monitoring_metrics(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    groups: dict[tuple[object, ...], list[dict[str, object]]] = {}
+    for row in rows:
+        key = tuple(row[name] for name in ("scope", "scenario", "symbol", "isin", "portfolio_sha256", "horizon"))
+        groups.setdefault(key, []).append(row)
+    output = []
+    for key, selected in sorted(groups.items(), key=lambda item: tuple(str(value) for value in item[0])):
+        errors = np.asarray([row["signed_error"] for row in selected], dtype=float)
+        scope = key[0]
+        output.append({
+            **dict(zip(_METRIC_COLUMNS[:6], key)), "count": len(selected), "bias": float(np.mean(errors)),
+            "mae": float(np.mean(np.abs(errors))), "rmse": float(np.sqrt(np.mean(errors * errors))),
+            "interval_80_coverage": "" if scope != "ETF" else float(np.mean([
+                row["interval_hit"] == "true" for row in selected
+            ])),
+        })
+    return output
+
+
+def reconcile_direct_forecasts(paths: DashboardPaths, state: DashboardState) -> Path:
+    output_root = paths.chronos_output_root.resolve()
+    project_root = paths.project_root.resolve()
+    if output_root == project_root or not output_root.is_relative_to(project_root):
+        raise ValueError("direct monitoring output escapes project root")
+    with _publication_lock(output_root):
+        archives = _direct_forecast_archives(output_root)
+        raw, config, retrieved_at, vintage_id, price_hash = _current_price_vintage(paths, state)
+        actuals = _actual_returns(archives, raw, config, retrieved_at)
+        realized, pending = _reconciled_direct_rows(archives, actuals)
+        hashes = [item[2] for item in archives]
+        identity = {
+            "price_vintage_manifest_sha256": price_hash,
+            "included_forecast_manifest_sha256": hashes,
+        }
+        monitoring_id = hashlib.sha256(canonical_json(identity)).hexdigest()
+        csv_files = {
+            "forecast_vs_actual.csv": _csv_bytes(realized, MONITORING_COLUMNS),
+            "pending_forecasts.csv": _csv_bytes(pending, MONITORING_COLUMNS),
+            "live_metrics.csv": _csv_bytes(_monitoring_metrics(realized), _METRIC_COLUMNS),
+        }
+        manifest = {
+            "schema_version": "DIRECT_CHRONOS_MONITORING_V1", "monitoring_id": monitoring_id,
+            "label": "PROSPECTIVE_TRACK_RECORD", "price_vintage": {
+                "vintage_id": vintage_id, "manifest_sha256": price_hash,
+            }, "included_forecast_manifest_sha256": hashes,
+            "forecast_ids": [item[0]["forecast_id"] for item in archives],
+            "generated_sha256": {name: hashlib.sha256(payload).hexdigest() for name, payload in csv_files.items()},
+        }
+
+        def inputs_unchanged() -> None:
+            current_archives = _direct_forecast_archives(output_root)
+            _raw, _config, _retrieved, _vintage, current_price_hash = _current_price_vintage(paths, state)
+            if current_price_hash != price_hash or [item[2] for item in current_archives] != hashes:
+                raise ValueError("direct monitoring inputs changed during reconciliation")
+
+        monitoring_root = output_root / "monitoring"
+        if monitoring_root.exists() and (
+            monitoring_root.is_symlink() or not monitoring_root.is_dir() or monitoring_root.resolve().parent != output_root
+        ):
+            raise ValueError("direct monitoring root is not a real direct child of output root")
+        _atomic_snapshot(
+            monitoring_root / monitoring_id, monitoring_root / ".staging",
+            {**csv_files, "manifest.json": canonical_json(manifest)}, "direct-monitoring", precommit=inputs_unchanged,
+        )
+        return (monitoring_root / monitoring_id).resolve()
+
+
 def publish_direct_forecast(
     paths: DashboardPaths,
     state: DashboardState,
@@ -800,92 +1016,94 @@ def publish_direct_forecast(
             manifest, _rows = read_direct_forecast(destination, output_root)
             if manifest["candidate_sha256"] != candidate_hash or manifest["base_sha256"] != base_hash:
                 raise ValueError("direct forecast collision")
-            return DirectForecastResult(identifier, destination.resolve(), snapshot.common_origin, candidate_hash, base_hash)
-
-        predict = predictor or load_chronos_predictor(config)
-        rows = run_direct_scenario_forecasts(config, snapshot, covariates, predict)
-        expected_rows = len(snapshot.series) * len(SCENARIO_NAMES) * config.prediction_length
-        if len(rows) != expected_rows or any(row.origin != snapshot.common_origin for row in rows):
-            raise ValueError("direct ETF forecast rows do not match their bound origin")
-        series_by_ticker = {series.component.ticker: series for series in snapshot.series}
-        etf_rows = [{
-            "scenario": row.scenario,
-            "symbol": row.target,
-            "isin": series_by_ticker[row.target].component.isin,
-            "exchange": series_by_ticker[row.target].component.exchange,
-            "currency": series_by_ticker[row.target].component.currency,
-            "forecast_month": row.forecast_month.isoformat(),
-            "horizon": row.horizon,
-            "q10": row.q10,
-            "q50": row.q50,
-            "q90": row.q90,
-            "history_count": len(series_by_ticker[row.target].returns),
-            "history_status": series_by_ticker[row.target].history_status,
-        } for row in rows]
-        portfolio_rows = _portfolio_rows(snapshot.candidate, snapshot.base, rows)
-        sensitivity_rows = _sensitivity_rows(target_series, rows, portfolio_rows)
-        volatility_rows = _volatility_rows(target_series, rows, snapshot.common_origin)
-        csv_files = {
-            "etf_forecast.csv": _csv_bytes(etf_rows, _ETF_COLUMNS),
-            "portfolio_paths.csv": _csv_bytes(portfolio_rows, _PORTFOLIO_COLUMNS),
-            "scenario_sensitivity.csv": _csv_bytes(sensitivity_rows, _SENSITIVITY_COLUMNS),
-            "volatility_snapshot.csv": _csv_bytes(volatility_rows, _VOLATILITY_COLUMNS),
-        }
-        generated = {name: hashlib.sha256(payload).hexdigest() for name, payload in csv_files.items()}
-        manifest = {
-            "schema_version": "DIRECT_CHRONOS_FORECAST_V1",
-            "forecast_id": identifier,
-            "issued_at": issued_at.isoformat(),
-            "common_origin": snapshot.common_origin.isoformat(),
-            "model": model,
-            "config_sha256": config.config_hash,
-            "portfolios": portfolios,
-            "candidate_sha256": candidate_hash,
-            "base_sha256": base_hash,
-            "target_series": target_series,
-            "price_vintage": price_vintage,
-            "macro_vintage_id": macro_vintage_id,
-            "scenarios": scenario_payload,
-            "warnings": [
-                {"symbol": series.component.ticker, "warning": "STORICO_BREVE"}
-                for series in snapshot.series if series.history_status == "STORICO_BREVE"
-            ],
-            "labels": {
-                "forecast": "PROSPECTIVE_SCENARIO_FORECAST",
-                "target_history": "RETROSPECTIVE_INPUT_ONLY",
-                "portfolio_paths": "CENTRAL_Q50_ONLY",
-                "usage": "RESEARCH_ONLY",
-            },
-            "generated_sha256": generated,
-        }
-        files = {**csv_files, "manifest.json": canonical_json(manifest)}
-
-        def inputs_unchanged() -> None:
-            current = load_etf_target_snapshot(paths, state)
-            current_covariates, current_vintage = load_covariate_table(config)
-            try:
-                current_index = current_covariates.months.index(current.common_origin)
-                current_rate = float(current_covariates.values[0, current_index])
-            except (IndexError, ValueError) as error:
-                raise ValueError("direct forecast inputs changed during publication") from error
-            current_scenarios = {
-                name: values.tolist() for name, values in ecb_scenarios(
-                    current_rate, config.scenario_basis_points, config.prediction_length,
-                ).items()
+            result = DirectForecastResult(identifier, destination.resolve(), snapshot.common_origin, candidate_hash, base_hash)
+        else:
+            predict = predictor or load_chronos_predictor(config)
+            rows = run_direct_scenario_forecasts(config, snapshot, covariates, predict)
+            expected_rows = len(snapshot.series) * len(SCENARIO_NAMES) * config.prediction_length
+            if len(rows) != expected_rows or any(row.origin != snapshot.common_origin for row in rows):
+                raise ValueError("direct ETF forecast rows do not match their bound origin")
+            series_by_ticker = {series.component.ticker: series for series in snapshot.series}
+            etf_rows = [{
+                "scenario": row.scenario,
+                "symbol": row.target,
+                "isin": series_by_ticker[row.target].component.isin,
+                "exchange": series_by_ticker[row.target].component.exchange,
+                "currency": series_by_ticker[row.target].component.currency,
+                "forecast_month": row.forecast_month.isoformat(),
+                "horizon": row.horizon,
+                "q10": row.q10,
+                "q50": row.q50,
+                "q90": row.q90,
+                "history_count": len(series_by_ticker[row.target].returns),
+                "history_status": series_by_ticker[row.target].history_status,
+            } for row in rows]
+            portfolio_rows = _portfolio_rows(snapshot.candidate, snapshot.base, rows)
+            sensitivity_rows = _sensitivity_rows(target_series, rows, portfolio_rows)
+            volatility_rows = _volatility_rows(target_series, rows, snapshot.common_origin)
+            csv_files = {
+                "etf_forecast.csv": _csv_bytes(etf_rows, _ETF_COLUMNS),
+                "portfolio_paths.csv": _csv_bytes(portfolio_rows, _PORTFOLIO_COLUMNS),
+                "scenario_sensitivity.csv": _csv_bytes(sensitivity_rows, _SENSITIVITY_COLUMNS),
+                "volatility_snapshot.csv": _csv_bytes(volatility_rows, _VOLATILITY_COLUMNS),
             }
-            current_identity = _direct_identity(
-                model,
-                config.config_hash,
-                {"candidate": _portfolio_payload(current.candidate), "base": _portfolio_payload(current.base)},
-                [_target_series_payload(series) for series in current.series],
-                {"vintage_id": current.price_vintage_id, "manifest_sha256": current.price_manifest_sha256},
-                current_vintage,
-                current.common_origin.isoformat(),
-                current_scenarios,
-            )
-            if hashlib.sha256(canonical_json(current_identity)).hexdigest() != identifier:
-                raise ValueError("direct forecast inputs changed during publication")
+            generated = {name: hashlib.sha256(payload).hexdigest() for name, payload in csv_files.items()}
+            manifest = {
+                "schema_version": "DIRECT_CHRONOS_FORECAST_V1",
+                "forecast_id": identifier,
+                "issued_at": issued_at.isoformat(),
+                "common_origin": snapshot.common_origin.isoformat(),
+                "model": model,
+                "config_sha256": config.config_hash,
+                "portfolios": portfolios,
+                "candidate_sha256": candidate_hash,
+                "base_sha256": base_hash,
+                "target_series": target_series,
+                "price_vintage": price_vintage,
+                "macro_vintage_id": macro_vintage_id,
+                "scenarios": scenario_payload,
+                "warnings": [
+                    {"symbol": series.component.ticker, "warning": "STORICO_BREVE"}
+                    for series in snapshot.series if series.history_status == "STORICO_BREVE"
+                ],
+                "labels": {
+                    "forecast": "PROSPECTIVE_SCENARIO_FORECAST",
+                    "target_history": "RETROSPECTIVE_INPUT_ONLY",
+                    "portfolio_paths": "CENTRAL_Q50_ONLY",
+                    "usage": "RESEARCH_ONLY",
+                },
+                "generated_sha256": generated,
+            }
+            files = {**csv_files, "manifest.json": canonical_json(manifest)}
 
-        _atomic_snapshot(destination, output_root / ".staging", files, "direct-forecast", precommit=inputs_unchanged)
-        read_direct_forecast(destination, output_root)
-        return DirectForecastResult(identifier, destination.resolve(), snapshot.common_origin, candidate_hash, base_hash)
+            def inputs_unchanged() -> None:
+                current = load_etf_target_snapshot(paths, state)
+                current_covariates, current_vintage = load_covariate_table(config)
+                try:
+                    current_index = current_covariates.months.index(current.common_origin)
+                    current_rate = float(current_covariates.values[0, current_index])
+                except (IndexError, ValueError) as error:
+                    raise ValueError("direct forecast inputs changed during publication") from error
+                current_scenarios = {
+                    name: values.tolist() for name, values in ecb_scenarios(
+                        current_rate, config.scenario_basis_points, config.prediction_length,
+                    ).items()
+                }
+                current_identity = _direct_identity(
+                    model,
+                    config.config_hash,
+                    {"candidate": _portfolio_payload(current.candidate), "base": _portfolio_payload(current.base)},
+                    [_target_series_payload(series) for series in current.series],
+                    {"vintage_id": current.price_vintage_id, "manifest_sha256": current.price_manifest_sha256},
+                    current_vintage,
+                    current.common_origin.isoformat(),
+                    current_scenarios,
+                )
+                if hashlib.sha256(canonical_json(current_identity)).hexdigest() != identifier:
+                    raise ValueError("direct forecast inputs changed during publication")
+
+            _atomic_snapshot(destination, output_root / ".staging", files, "direct-forecast", precommit=inputs_unchanged)
+            read_direct_forecast(destination, output_root)
+            result = DirectForecastResult(identifier, destination.resolve(), snapshot.common_origin, candidate_hash, base_hash)
+    reconcile_direct_forecasts(paths, state)
+    return result
