@@ -71,6 +71,10 @@ class DashboardPaths:
     state: Path
     runtime_config: Path
     output_root: Path
+    chronos_config: Path
+    chronos_candidate: Path
+    chronos_job: Path
+    chronos_output_root: Path
 
     @classmethod
     def from_root(cls, root: Path) -> "DashboardPaths":
@@ -81,6 +85,10 @@ class DashboardPaths:
             root / "data" / "dashboard_v1" / "state.json",
             root / "data" / "dashboard_v1" / "runtime_portfolio.json",
             root / "outputs" / "dashboard_v1" / "comparisons",
+            root / "config" / "chronos_v1.json",
+            root / "data" / "dashboard_v1" / "chronos_candidate_portfolio.json",
+            root / "data" / "dashboard_v1" / "chronos_evaluation_job.json",
+            root / "outputs" / "dashboard_chronos_v1",
         )
 
 
