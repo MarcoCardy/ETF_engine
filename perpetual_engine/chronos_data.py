@@ -629,14 +629,30 @@ def _replace_current_pointer(data_root: Path, content: bytes) -> None:
             temporary.unlink()
 
 
+def _validated_target_months(months: Iterable[date]) -> tuple[date, ...]:
+    result = tuple(months)
+    if (
+        not result
+        or any(not isinstance(month, date) or isinstance(month, datetime) or month != _month_end(month) for month in result)
+        or any(current != _next_month_end(previous) for previous, current in zip(result, result[1:]))
+    ):
+        raise ValueError("target months must be month-end, ordered, and contiguous")
+    return result
+
+
 def refresh_chronos_data(
     config_path: Path,
     *,
+    target_months: Iterable[date] | None = None,
     fetcher: Callable[[str], bytes] = fetch_url,
     retrieved_at: datetime | None = None,
 ) -> str:
     config = load_chronos_config(config_path)
-    targets = load_target_table(config)
+    months = (
+        load_target_table(config).months
+        if target_months is None
+        else _validated_target_months(target_months)
+    )
     retrieved_at = retrieved_at or datetime.now(timezone.utc)
     if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
         raise ValueError("retrieved_at must be timezone-aware")
@@ -670,7 +686,7 @@ def refresh_chronos_data(
                 "sha256": artifact.source_hash,
                 "raw_path": artifact.local_path.relative_to(stage).as_posix(),
             })
-        table = normalize_covariates(config, targets.months, source_rows)
+        table = normalize_covariates(config, months, source_rows)
         normalized = _covariate_bytes(table)
         normalized_hash = hashlib.sha256(normalized).hexdigest()
         raw_files_hashes = _raw_file_hashes(stage)

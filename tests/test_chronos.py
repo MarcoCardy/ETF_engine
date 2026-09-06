@@ -15,7 +15,7 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -446,6 +446,37 @@ class ChronosRefreshTests(unittest.TestCase):
                 ("2023-12-01", "110"), ("2024-01-01", "120"),
             )),
         }
+
+    def test_refresh_uses_explicit_direct_etf_months_without_loading_proxy_targets(self):
+        from perpetual_engine.chronos_data import load_chronos_config, load_covariate_table, refresh_chronos_data
+
+        direct_months = (date(2024, 1, 31), date(2024, 2, 29))
+        with patch(
+            "perpetual_engine.chronos_data.load_target_table",
+            side_effect=AssertionError("proxy targets must not be loaded"),
+        ):
+            vintage_id = refresh_chronos_data(
+                self.config_path,
+                target_months=direct_months,
+                fetcher=self.payloads.__getitem__,
+                retrieved_at=self.at,
+            )
+        table, loaded_id = load_covariate_table(load_chronos_config(self.config_path))
+        self.assertEqual(loaded_id, vintage_id)
+        self.assertEqual(table.months, direct_months)
+
+    def test_refresh_rejects_invalid_explicit_months_before_downloading(self):
+        from perpetual_engine.chronos_data import refresh_chronos_data
+
+        fetcher = Mock(side_effect=AssertionError("network must not start"))
+        with self.assertRaisesRegex(ValueError, "month-end, ordered, and contiguous"):
+            refresh_chronos_data(
+                self.config_path,
+                target_months=(date(2025, 1, 30), date(2025, 3, 31)),
+                fetcher=fetcher,
+                retrieved_at=self.at,
+            )
+        fetcher.assert_not_called()
 
     def test_refresh_freezes_five_sources_and_reuses_identical_vintage(self):
         from perpetual_engine.chronos_data import load_chronos_config, load_covariate_table, refresh_chronos_data
