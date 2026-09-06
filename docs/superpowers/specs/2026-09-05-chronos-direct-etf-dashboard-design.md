@@ -201,7 +201,7 @@ The evaluation reuses the existing bounded set of at most `2k + 2` variants for 
 3. full model with all covariates;
 4. full model minus each covariate separately.
 
-It reports horizons 1, 3, 6, and 12 plus a pooled result. The primary loss is mean pinball loss across `q10`, `q50`, and `q90`; MAE of `q50` and empirical 80% interval coverage remain diagnostics. A zero-return forecast and Chronos target-only model remain required comparators.
+It reports horizons 1, 3, 6, and 12 plus a pooled result. For each ETF, the primary loss is mean pinball loss across `q10`, `q50`, and `q90`; MAE of `q50` and empirical 80% interval coverage remain diagnostics. For `CANDIDATE_PORTFOLIO`, the loss used for contribution and bootstrap classification is MAE of the weighted component `q50` forecast against the weighted realized return. This portfolio rule does not manufacture aggregate `q10` or `q90` values and is labelled `MAE_Q50`. A zero-return forecast and Chronos target-only model remain required comparators.
 
 For each covariate:
 
@@ -210,7 +210,7 @@ standalone contribution = loss(base) - loss(base + covariate)
 conditional contribution = loss(full - covariate) - loss(full)
 ```
 
-The conditional contribution drives the label. A paired moving-block bootstrap over per-origin loss differences uses block length six, 2,000 resamples, seed 42, and a percentile 95% confidence interval:
+The conditional contribution drives the label. A paired moving-block bootstrap over per-origin loss differences—pinball loss for ETF scopes and `MAE_Q50` for `CANDIDATE_PORTFOLIO`—uses block length six, 2,000 resamples, seed 42, and a percentile 95% confidence interval:
 
 - `USEFUL` when the lower bound is greater than zero;
 - `HARMFUL` when the upper bound is less than zero;
