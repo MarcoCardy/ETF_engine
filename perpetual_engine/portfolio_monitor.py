@@ -645,10 +645,12 @@ def load_current_portfolio_prices(
     path: Path,
     *,
     project_root: Path | None = None,
-) -> tuple[PortfolioConfig, dict[str, dict[date, float]], Mapping[str, Any]]:
+    include_manifest_bytes: bool = False,
+) -> tuple[PortfolioConfig, dict[str, dict[date, float]], Mapping[str, Any]] | tuple[PortfolioConfig, dict[str, dict[date, float]], Mapping[str, Any], bytes]:
     config = load_portfolio_config(path, project_root=project_root)
-    raw, manifest, _ = _load_current(config)
-    return config, raw, MappingProxyType(dict(manifest))
+    raw, manifest, manifest_bytes = _load_current(config)
+    result = (config, raw, MappingProxyType(dict(manifest)))
+    return (*result, manifest_bytes) if include_manifest_bytes else result
 
 
 def _csv_bytes(fieldnames: tuple[str, ...], rows: list[Mapping[str, Any]]) -> bytes:

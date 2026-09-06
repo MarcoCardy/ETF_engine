@@ -611,7 +611,12 @@ def _validated_target_series(
     return result
 
 
-def read_direct_forecast(path: Path, output_root: Path) -> tuple[dict[str, Any], tuple[dict[str, str], ...]]:
+def read_direct_forecast(
+    path: Path,
+    output_root: Path,
+    *,
+    include_manifest_hash: bool = False,
+) -> tuple[dict[str, Any], tuple[dict[str, str], ...]] | tuple[dict[str, Any], tuple[dict[str, str], ...], str]:
     output_root = output_root.resolve()
     forecast_root = (output_root / "forecasts").resolve()
     resolved = path.resolve()
@@ -756,7 +761,8 @@ def read_direct_forecast(path: Path, output_root: Path) -> tuple[dict[str, Any],
     volatility_rows = _volatility_rows(target_series, forecast_rows, origin)
     if payloads["volatility_snapshot.csv"] != _csv_bytes(volatility_rows, _VOLATILITY_COLUMNS):
         raise ValueError("direct volatility does not match bound target history and ETF forecasts")
-    return manifest, rows
+    result = (manifest, rows)
+    return (*result, hashlib.sha256(payloads["manifest.json"]).hexdigest()) if include_manifest_hash else result
 
 
 def _direct_forecast_archives(output_root: Path) -> tuple[tuple[dict[str, Any], tuple[dict[str, str], ...], str], ...]:
@@ -772,8 +778,8 @@ def _direct_forecast_archives(output_root: Path) -> tuple[tuple[dict[str, Any], 
     for archive in sorted(forecast_root.iterdir(), key=lambda item: item.name):
         if archive.is_symlink() or not archive.is_dir() or archive.resolve().parent != forecast_root.resolve():
             raise ValueError("direct forecast archive is not a real direct child of forecast root")
-        manifest, rows = read_direct_forecast(archive, output_root)
-        archives.append((manifest, rows, hashlib.sha256((archive / "manifest.json").read_bytes()).hexdigest()))
+        manifest, rows, manifest_hash = read_direct_forecast(archive, output_root, include_manifest_hash=True)
+        archives.append((manifest, rows, manifest_hash))
     return tuple(archives)
 
 
@@ -786,7 +792,9 @@ def _current_price_vintage(
     runtime = materialize_runtime_config(
         paths.default_config, state, paths.runtime_config, project_root=paths.project_root,
     )
-    config, raw, manifest = load_current_portfolio_prices(runtime, project_root=paths.project_root)
+    config, raw, manifest, manifest_bytes = load_current_portfolio_prices(
+        runtime, project_root=paths.project_root, include_manifest_bytes=True,
+    )
     try:
         vintage_id = manifest["vintage_id"]
         retrieved_at = _parse_utc(manifest["retrieved_at"], "price vintage retrieved_at")
@@ -794,13 +802,7 @@ def _current_price_vintage(
         raise ValueError("current price vintage is malformed") from error
     if not _is_sha256(vintage_id):
         raise ValueError("current price vintage identity is invalid")
-    vintage = (config.data_root / "vintages" / vintage_id).resolve()
-    if vintage.parent != (config.data_root / "vintages").resolve():
-        raise ValueError("current price vintage escapes its data root")
-    manifest_path = vintage / "manifest.json"
-    if not manifest_path.is_file() or manifest_path.resolve().parent != vintage:
-        raise ValueError("current price vintage manifest is missing")
-    return raw, config, retrieved_at, vintage_id, hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    return raw, config, retrieved_at, vintage_id, hashlib.sha256(manifest_bytes).hexdigest()
 
 
 def _actual_returns(

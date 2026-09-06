@@ -635,3 +635,49 @@ class DirectReconciliationTests(DirectChronosFixture):
         archives = sorted((self.paths.chronos_output_root / "forecasts").iterdir())
         self.assertEqual(len(archives), 2)
         read_direct_forecast(next(path for path in archives if path != old.output_dir), self.paths.chronos_output_root)
+
+    def test_reconciliation_binds_the_price_manifest_bytes_it_validated(self):
+        from perpetual_engine import dashboard_chronos
+        from perpetual_engine.dashboard_service import materialize_runtime_config
+        from perpetual_engine.portfolio_monitor import load_current_portfolio_prices
+
+        self.publish_known_forecast()
+        runtime = materialize_runtime_config(
+            self.paths.default_config, self.state, self.paths.runtime_config, project_root=self.paths.project_root,
+        )
+        config, raw, manifest = load_current_portfolio_prices(runtime, project_root=self.paths.project_root)
+        manifest_path = config.data_root / "vintages" / manifest["vintage_id"] / "manifest.json"
+        validated_bytes = manifest_path.read_bytes()
+
+        def validated_loader(*_args, include_manifest_bytes=False, **_kwargs):
+            values = (config, raw, manifest)
+            return (*values, validated_bytes) if include_manifest_bytes else values
+
+        manifest_path.write_bytes(b"{}")
+        with patch.object(dashboard_chronos, "load_current_portfolio_prices", side_effect=validated_loader):
+            monitoring = dashboard_chronos.reconcile_direct_forecasts(self.paths, self.state)
+        published = json.loads((monitoring / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            published["price_vintage"]["manifest_sha256"], hashlib.sha256(validated_bytes).hexdigest(),
+        )
+
+    def test_reconciliation_rejects_archive_changed_after_validation_before_identity_capture(self):
+        from perpetual_engine import dashboard_chronos
+
+        forecast = self.publish_known_forecast()
+        original = dashboard_chronos.read_direct_forecast
+        changed = False
+
+        def read_then_change(*args, **kwargs):
+            nonlocal changed
+            result = original(*args, **kwargs)
+            if not changed:
+                changed = True
+                manifest_path = forecast.output_dir / "manifest.json"
+                manifest_path.write_bytes(b"\n" + manifest_path.read_bytes())
+            return result
+
+        with patch.object(dashboard_chronos, "read_direct_forecast", side_effect=read_then_change), self.assertRaisesRegex(
+            ValueError, "inputs changed",
+        ):
+            dashboard_chronos.reconcile_direct_forecasts(self.paths, self.state)
