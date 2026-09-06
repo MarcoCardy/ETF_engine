@@ -187,6 +187,19 @@ class DirectTargetTests(DirectChronosFixture):
         with self.assertRaisesRegex(ValueError, r"DBMFE\.PA.*8 observed"):
             load_etf_target_snapshot(self.paths, self.state)
 
+    def test_targets_keep_history_ending_at_common_origin_before_a_later_gap(self):
+        from perpetual_engine.dashboard_chronos import load_etf_target_snapshot
+
+        dates = months(62, date(2021, 1, 31))
+        histories = {ticker: dates for ticker in self.current_prices()}
+        histories["DBMFE.PA"] = dates[:57]
+        histories["SWDA.MI"] = tuple(date(2025, 12, 23) if day == date(2025, 12, 31) else day for day in dates)
+        self.refresh_prices(self.payloads_for_dates(histories))
+
+        snapshot = load_etf_target_snapshot(self.paths, self.state)
+        self.assertEqual(snapshot.common_origin, date(2025, 9, 30))
+        self.assertEqual(len(next(series for series in snapshot.series if series.component.ticker == "SWDA.MI").returns), 56)
+
     def test_targets_enforce_exact_history_boundaries_and_identify_missing_prices(self):
         from perpetual_engine import dashboard_chronos
         from perpetual_engine.dashboard_chronos import load_etf_target_snapshot

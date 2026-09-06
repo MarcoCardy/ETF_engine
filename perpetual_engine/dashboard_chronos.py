@@ -179,15 +179,13 @@ def _monthly_returns(prices: Mapping[date, float], staleness: int, as_of: date) 
         if observation is not None:
             selected[month] = observation[1]
         month = _next_month_end(month)
-    contiguous = [max(selected)] if selected else []
-    while contiguous:
-        previous = _month_end(date(contiguous[-1].year, contiguous[-1].month, 1) - timedelta(days=1))
-        if previous not in selected:
-            break
-        contiguous.append(previous)
-    contiguous.reverse()
-    result_months = contiguous[1:]
-    returns = [selected[month] / selected[previous] - 1.0 for previous, month in zip(contiguous, contiguous[1:])]
+    result_months = []
+    returns = []
+    for month in sorted(selected):
+        previous = _month_end(date(month.year, month.month, 1) - timedelta(days=1))
+        if previous in selected:
+            result_months.append(month)
+            returns.append(selected[month] / selected[previous] - 1.0)
     if any(not math.isfinite(value) for value in returns):
         raise ValueError("ETF monthly return is not finite")
     return tuple(result_months), np.asarray(returns, dtype=float)
@@ -232,7 +230,13 @@ def load_etf_target_snapshot(paths: DashboardPaths, state: DashboardState) -> Di
     common_origin = max(common)
     series: list[EtfTargetSeries] = []
     for component, monthly, returns in unbounded:
-        kept = [(month, value) for month, value in zip(monthly, returns) if month <= common_origin]
+        values = dict(zip(monthly, returns))
+        kept = []
+        month = common_origin
+        while month in values:
+            kept.append((month, values[month]))
+            month = _month_end(date(month.year, month.month, 1) - timedelta(days=1))
+        kept.reverse()
         kept_months = tuple(month for month, _value in kept)
         kept_returns = np.asarray([value for _month, value in kept], dtype=float)
         if len(kept_returns) < 12:
