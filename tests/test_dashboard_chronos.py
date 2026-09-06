@@ -304,6 +304,19 @@ class DirectForecastTests(DirectChronosFixture):
         with path.open(newline="", encoding="utf-8") as handle:
             return list(csv.DictReader(handle))
 
+    @staticmethod
+    def write_csv_rows(path, rows):
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=tuple(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def rehash_generated(self, output_dir, name):
+        manifest_path = output_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["generated_sha256"][name] = hashlib.sha256((output_dir / name).read_bytes()).hexdigest()
+        manifest_path.write_bytes(canonical_json(manifest))
+
     def test_direct_forecast_batches_unique_etfs_once_preserves_histories_and_has_only_future_ecb(self):
         calls = []
 
@@ -374,6 +387,22 @@ class DirectForecastTests(DirectChronosFixture):
             )
         self.assertFalse((self.paths.chronos_output_root / "forecasts").exists())
 
+    def test_direct_forecast_rejects_macro_vintage_that_does_not_cover_every_retained_etf_month(self):
+        from perpetual_engine.dashboard_chronos import publish_direct_forecast
+        from perpetual_engine.chronos_data import MonthlyTable
+
+        macro = self.covariates()
+        incomplete = MonthlyTable(macro.months[20:], macro.names, macro.values[:, 20:])
+        with patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_table",
+            return_value=(incomplete, self.macro_vintage_id),
+        ), self.assertRaisesRegex(ValueError, r"SWDA\.MI.*macro history"):
+            publish_direct_forecast(
+                self.paths, self.state, predictor=self.forecast_predictor,
+                issued_at=datetime(2026, 3, 3, tzinfo=timezone.utc),
+            )
+        self.assertFalse((self.paths.chronos_output_root / "forecasts").exists())
+
     def test_direct_forecast_identity_manifest_sensitivity_and_byte_identical_reuse(self):
         from perpetual_engine.dashboard_chronos import read_direct_forecast, save_candidate_portfolio
 
@@ -421,6 +450,21 @@ class DirectForecastTests(DirectChronosFixture):
         self.assertNotEqual(changed.forecast_id, first.forecast_id)
 
     def test_direct_forecast_loads_predictor_once_and_publishes_etf_and_portfolio_sensitivity(self):
+        from perpetual_engine.dashboard_chronos import load_etf_target_snapshot
+
+        long_dates = months(62, date(2021, 1, 31))
+        short_dates = long_dates[12:]
+        dates_by_ticker = {
+            "SWDA.MI": long_dates, "IWMO.MI": long_dates, "IWQU.MI": long_dates,
+            "GRID.MI": long_dates, "DBMFE.PA": short_dates,
+        }
+        varying = {
+            ticker: daily_bytes(list(prices_from_returns(
+                dates, tuple(0.01 if index % 2 else 0.03 for index in range(len(dates) - 1)),
+            ).items()))
+            for ticker, dates in dates_by_ticker.items()
+        }
+        self.refresh_prices(varying)
         loader_calls = []
 
         def load_predictor(config):
@@ -435,3 +479,45 @@ class DirectForecastTests(DirectChronosFixture):
         self.assertEqual({row["scope"] for row in sensitivity}, {"ETF", "PORTFOLIO"})
         portfolio = next(row for row in sensitivity if row["scope"] == "PORTFOLIO" and row["portfolio"] == "CANDIDATE" and row["scenario"] == "ECB_DOWN_100BP" and row["horizon"] == "1")
         self.assertAlmostEqual(float(portfolio["q50_delta"]), 0.001)
+
+        volatility = self.csv_rows(result.output_dir / "volatility_snapshot.csv")
+        self.assertEqual(len(volatility), 5 * 3 * 12)
+        swda = next(row for row in volatility if row["symbol"] == "SWDA.MI" and row["scenario"] == "ECB_FLAT" and row["horizon"] == "1")
+        swda_returns = next(
+            series.returns for series in load_etf_target_snapshot(self.paths, self.state).series
+            if series.component.ticker == "SWDA.MI"
+        )
+        self.assertAlmostEqual(float(swda["trailing_volatility_12m"]), float(np.std(swda_returns[-12:], ddof=1) * math.sqrt(12)))
+        self.assertAlmostEqual(float(swda["interval_width"]), 0.02)
+
+    def test_direct_forecast_reader_recomputes_tampered_rehashed_derived_artifacts(self):
+        from perpetual_engine.dashboard_chronos import read_direct_forecast
+
+        result = self.publish()
+        original = {path.name: path.read_bytes() for path in result.output_dir.iterdir()}
+        mutations = {
+            "portfolio_paths.csv": ("central_return", "nan"),
+            "scenario_sensitivity.csv": ("q50_delta", "0.123"),
+            "volatility_snapshot.csv": ("trailing_volatility_12m", "999"),
+        }
+        for name, (field, value) in mutations.items():
+            with self.subTest(name=name):
+                rows = self.csv_rows(result.output_dir / name)
+                rows[0][field] = value
+                self.write_csv_rows(result.output_dir / name, rows)
+                self.rehash_generated(result.output_dir, name)
+                with self.assertRaisesRegex(ValueError, r"portfolio|sensitivity|volatility"):
+                    read_direct_forecast(result.output_dir, self.paths.chronos_output_root)
+                for filename, content in original.items():
+                    (result.output_dir / filename).write_bytes(content)
+
+    def test_direct_forecast_reader_rejects_unexpected_warning_even_when_outputs_are_rehashed(self):
+        from perpetual_engine.dashboard_chronos import read_direct_forecast
+
+        result = self.publish()
+        manifest_path = result.output_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["warnings"] = []
+        manifest_path.write_bytes(canonical_json(manifest))
+        with self.assertRaisesRegex(ValueError, "warning"):
+            read_direct_forecast(result.output_dir, self.paths.chronos_output_root)

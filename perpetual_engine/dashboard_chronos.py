@@ -292,11 +292,10 @@ def _aligned_etf_values(series: EtfTargetSeries, covariates: MonthlyTable, origi
     if series.returns.shape != (len(series.months),):
         raise ValueError(f"{series.component.ticker}: ETF return history shape is invalid")
     covariate_index = {month: index for index, month in enumerate(covariates.months)}
-    indices = [(index, covariate_index[month]) for index, month in enumerate(series.months) if month <= origin and month in covariate_index]
-    if not indices or series.months[indices[-1][0]] != origin:
-        raise ValueError(f"{series.component.ticker}: shared common_origin is unavailable in ETF or macro history")
-    target = np.asarray([series.returns[index] for index, _covariate in indices], dtype=np.float32)
-    past = np.asarray(covariates.values[:, [covariate for _target, covariate in indices]], dtype=np.float32)
+    if not series.months or series.months[-1] != origin or any(month not in covariate_index for month in series.months):
+        raise ValueError(f"{series.component.ticker}: macro history must cover every retained ETF month through common_origin")
+    target = np.asarray(series.returns, dtype=np.float32)
+    past = np.asarray(covariates.values[:, [covariate_index[month] for month in series.months]], dtype=np.float32)
     if len(target) < 12 or not np.isfinite(target).all() or not np.isfinite(past).all():
         raise ValueError(f"{series.component.ticker}: aligned forecast history must contain at least 12 finite returns")
     return target, past
@@ -384,6 +383,16 @@ def _portfolio_hash(portfolio: DirectPortfolio) -> str:
     return hashlib.sha256(canonical_json(_portfolio_payload(portfolio))).hexdigest()
 
 
+def _target_series_payload(series: EtfTargetSeries) -> dict[str, object]:
+    return {
+        **_component_payload(series.component),
+        "history_count": len(series.returns),
+        "history_status": series.history_status,
+        "series_sha256": series.series_sha256,
+        "trailing_volatility_12m": float(np.std(series.returns[-12:], ddof=1) * math.sqrt(12.0)),
+    }
+
+
 def _direct_identity(
     model: Mapping[str, object],
     config_hash: str,
@@ -406,11 +415,10 @@ def _direct_identity(
     }
 
 
-def _portfolio_rows(snapshot: DirectTargetSnapshot, rows: tuple[ForecastRow, ...]) -> list[dict[str, object]]:
+def _portfolio_rows(candidate: DirectPortfolio, base: DirectPortfolio, rows: tuple[ForecastRow, ...]) -> list[dict[str, object]]:
     by_key = {(row.target, row.scenario, row.horizon): row for row in rows}
     output: list[dict[str, object]] = []
-    for name, portfolio in (("CANDIDATE", snapshot.candidate), ("BASE", snapshot.base)):
-        value = 100.0
+    for name, portfolio in (("CANDIDATE", candidate), ("BASE", base)):
         for scenario in SCENARIO_NAMES:
             value = 100.0
             for horizon in range(1, 13):
@@ -437,17 +445,17 @@ def _portfolio_rows(snapshot: DirectTargetSnapshot, rows: tuple[ForecastRow, ...
     return output
 
 
-def _sensitivity_rows(snapshot: DirectTargetSnapshot, rows: tuple[ForecastRow, ...], paths: list[dict[str, object]]) -> list[dict[str, object]]:
+def _sensitivity_rows(target_series: list[dict[str, object]], rows: tuple[ForecastRow, ...], paths: list[dict[str, object]]) -> list[dict[str, object]]:
     by_key = {(row.target, row.scenario, row.horizon): row for row in rows}
     output = []
-    for series in snapshot.series:
+    for series in target_series:
         for scenario in SCENARIO_NAMES[1:]:
             for horizon in range(1, 13):
-                row = by_key[(series.component.ticker, scenario, horizon)]
-                flat = by_key[(series.component.ticker, "ECB_FLAT", horizon)]
+                row = by_key[(series["ticker"], scenario, horizon)]
+                flat = by_key[(series["ticker"], "ECB_FLAT", horizon)]
                 output.append({
-                    "scope": "ETF", "portfolio": "", "symbol": series.component.ticker,
-                    "isin": series.component.isin, "forecast_month": row.forecast_month.isoformat(),
+                    "scope": "ETF", "portfolio": "", "symbol": series["ticker"],
+                    "isin": series["isin"], "forecast_month": row.forecast_month.isoformat(),
                     "horizon": horizon, "scenario": scenario, "q50": row.q50, "flat_q50": flat.q50,
                     "q50_delta": row.q50 - flat.q50, "interval_width": row.q90 - row.q10,
                     "flat_interval_width": flat.q90 - flat.q10,
@@ -469,19 +477,18 @@ def _sensitivity_rows(snapshot: DirectTargetSnapshot, rows: tuple[ForecastRow, .
     return output
 
 
-def _volatility_rows(snapshot: DirectTargetSnapshot, rows: tuple[ForecastRow, ...]) -> list[dict[str, object]]:
-    series_by_ticker = {series.component.ticker: series for series in snapshot.series}
+def _volatility_rows(target_series: list[dict[str, object]], rows: tuple[ForecastRow, ...], origin: date) -> list[dict[str, object]]:
+    series_by_ticker = {series["ticker"]: series for series in target_series}
     output = []
     for row in rows:
         series = series_by_ticker[row.target]
-        trailing = float(np.std(series.returns[-12:], ddof=1) * math.sqrt(12.0))
         output.append({
-            "symbol": series.component.ticker,
-            "isin": series.component.isin,
-            "origin": snapshot.common_origin.isoformat(),
-            "history_count": len(series.returns),
-            "history_status": series.history_status,
-            "trailing_volatility_12m": trailing,
+            "symbol": series["ticker"],
+            "isin": series["isin"],
+            "origin": origin.isoformat(),
+            "history_count": series["history_count"],
+            "history_status": series["history_status"],
+            "trailing_volatility_12m": series["trailing_volatility_12m"],
             "scenario": row.scenario,
             "forecast_month": row.forecast_month.isoformat(),
             "horizon": row.horizon,
@@ -519,6 +526,81 @@ _VOLATILITY_COLUMNS = (
 _DIRECT_FILES = {"etf_forecast.csv", "portfolio_paths.csv", "scenario_sensitivity.csv", "volatility_snapshot.csv", "manifest.json"}
 
 
+def _component_from_payload(value: object, label: str) -> DirectComponent:
+    fields = {"id", "name", "ticker", "isin", "exchange", "currency", "weight"}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError(f"{label} component schema is invalid")
+    strings = tuple(value[field] for field in ("id", "name", "ticker", "isin", "exchange", "currency"))
+    weight = value["weight"]
+    if (
+        not all(isinstance(item, str) and item for item in strings)
+        or strings[-1] != "EUR"
+        or type(weight) not in (int, float)
+        or not math.isfinite(weight)
+        or weight <= 0
+    ):
+        raise ValueError(f"{label} component identity is invalid")
+    return DirectComponent(*strings, weight)
+
+
+def _portfolio_from_payload(value: object, key: str) -> DirectPortfolio:
+    label = "Portafoglio da studiare" if key == "candidate" else "Portafoglio base"
+    if not isinstance(value, dict) or set(value) != {"label", "components"} or value.get("label") != label:
+        raise ValueError(f"direct forecast {key} portfolio schema is invalid")
+    raw = value.get("components")
+    if not isinstance(raw, list):
+        raise ValueError(f"direct forecast {key} portfolio components are invalid")
+    portfolio = DirectPortfolio(label, tuple(_component_from_payload(item, key) for item in raw))
+    _validate_components(portfolio.components)
+    return portfolio
+
+
+def _validated_target_series(
+    value: object,
+    candidate: DirectPortfolio,
+    base: DirectPortfolio,
+) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        raise ValueError("direct forecast target-series schema is invalid")
+    expected_components = []
+    seen = set()
+    for component in (*candidate.components, *base.components):
+        key = (component.ticker, component.isin)
+        if key not in seen:
+            seen.add(key)
+            expected_components.append(component)
+    fields = {
+        "id", "name", "ticker", "isin", "exchange", "currency", "weight", "history_count",
+        "history_status", "series_sha256", "trailing_volatility_12m",
+    }
+    result = []
+    for raw, expected in zip(value, expected_components):
+        if not isinstance(raw, dict) or set(raw) != fields:
+            raise ValueError("direct forecast target-series schema is invalid")
+        component = _component_from_payload({name: raw[name] for name in fields if name in {
+            "id", "name", "ticker", "isin", "exchange", "currency", "weight",
+        }}, "target-series")
+        count, status, series_hash, volatility = (
+            raw["history_count"], raw["history_status"], raw["series_sha256"], raw["trailing_volatility_12m"],
+        )
+        expected_status = "STORICO_BREVE" if type(count) is int and 12 <= count < 60 else "SUFFICIENT_HISTORY"
+        if (
+            component != expected
+            or type(count) is not int
+            or count < 12
+            or status != expected_status
+            or not _is_sha256(series_hash)
+            or type(volatility) not in (int, float)
+            or not math.isfinite(volatility)
+            or volatility < 0
+        ):
+            raise ValueError("direct forecast target-series identity is invalid")
+        result.append(raw)
+    if len(result) != len(value) or len(result) != len(expected_components):
+        raise ValueError("direct forecast target-series count is invalid")
+    return result
+
+
 def read_direct_forecast(path: Path, output_root: Path) -> tuple[dict[str, Any], tuple[dict[str, str], ...]]:
     output_root = output_root.resolve()
     forecast_root = (output_root / "forecasts").resolve()
@@ -545,35 +627,84 @@ def read_direct_forecast(path: Path, output_root: Path) -> tuple[dict[str, Any],
         raise ValueError("direct forecast generated hashes are invalid")
     if any(not _is_sha256(digest) or hashlib.sha256(payloads[name]).hexdigest() != digest for name, digest in generated.items()):
         raise ValueError("direct forecast generated hash mismatch")
-    try:
-        identity = _direct_identity(
-            manifest["model"], manifest["config_sha256"], manifest["portfolios"], manifest["target_series"],
-            manifest["price_vintage"], manifest["macro_vintage_id"], manifest["common_origin"], manifest["scenarios"],
+    model = manifest.get("model")
+    if (
+        not isinstance(model, dict)
+        or set(model) != {"id", "revision", "package", "package_version", "device"}
+        or (model.get("id"), model.get("revision"), model.get("package"), model.get("device")) != (
+            "amazon/chronos-2", "29ec3766d36d6f73f0696f85560a422f50e8498c", "chronos-forecasting", "cpu",
         )
-        expected_id = hashlib.sha256(canonical_json(identity)).hexdigest()
+        or not isinstance(model.get("package_version"), str)
+        or not model["package_version"]
+    ):
+        raise ValueError("direct forecast model identity is invalid")
+    if manifest.get("labels") != {
+        "forecast": "PROSPECTIVE_SCENARIO_FORECAST",
+        "target_history": "RETROSPECTIVE_INPUT_ONLY",
+        "portfolio_paths": "CENTRAL_Q50_ONLY",
+        "usage": "RESEARCH_ONLY",
+    }:
+        raise ValueError("direct forecast labels are invalid")
+    if not _is_sha256(manifest.get("config_sha256")) or not _is_sha256(manifest.get("macro_vintage_id")):
+        raise ValueError("direct forecast configuration or macro identity is invalid")
+    price_vintage = manifest.get("price_vintage")
+    if (
+        not isinstance(price_vintage, dict)
+        or set(price_vintage) != {"vintage_id", "manifest_sha256"}
+        or not all(_is_sha256(price_vintage.get(name)) for name in ("vintage_id", "manifest_sha256"))
+    ):
+        raise ValueError("direct forecast price-vintage identity is invalid")
+    try:
         _parse_utc(manifest["issued_at"], "direct forecast issued_at")
         origin = date.fromisoformat(manifest["common_origin"])
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("direct forecast identity is invalid") from error
+    if origin != _month_end(origin):
+        raise ValueError("direct forecast common origin is invalid")
+    portfolios = manifest.get("portfolios")
+    if not isinstance(portfolios, dict) or set(portfolios) != {"candidate", "base"}:
+        raise ValueError("direct forecast portfolio schema is invalid")
+    candidate = _portfolio_from_payload(portfolios["candidate"], "candidate")
+    base = _portfolio_from_payload(portfolios["base"], "base")
+    target_series = _validated_target_series(manifest.get("target_series"), candidate, base)
+    if (
+        hashlib.sha256(canonical_json(portfolios["candidate"])).hexdigest() != manifest.get("candidate_sha256")
+        or hashlib.sha256(canonical_json(portfolios["base"])).hexdigest() != manifest.get("base_sha256")
+    ):
+        raise ValueError("direct forecast portfolio hash mismatch")
+    scenarios = manifest.get("scenarios")
+    if not isinstance(scenarios, dict) or set(scenarios) != set(SCENARIO_NAMES):
+        raise ValueError("direct forecast scenarios are invalid")
+    try:
+        scenario_arrays = {name: np.asarray(scenarios[name], dtype=float) for name in SCENARIO_NAMES}
+        expected_scenarios = ecb_scenarios(
+            float(scenario_arrays["ECB_FLAT"][0]), 100, 12,
+        )
+    except (IndexError, TypeError, ValueError) as error:
+        raise ValueError("direct forecast scenarios are invalid") from error
+    if any(
+        values.shape != (12,) or not np.isfinite(values).all()
+        or not np.array_equal(values, expected_scenarios[name])
+        for name, values in scenario_arrays.items()
+    ):
+        raise ValueError("direct forecast scenarios are invalid")
+    expected_warnings = [
+        {"symbol": item["ticker"], "warning": "STORICO_BREVE"}
+        for item in target_series if item["history_status"] == "STORICO_BREVE"
+    ]
+    if manifest.get("warnings") != expected_warnings:
+        raise ValueError("direct forecast warnings are invalid")
+    identity = _direct_identity(
+        model, manifest["config_sha256"], portfolios, target_series, price_vintage,
+        manifest["macro_vintage_id"], manifest["common_origin"], scenarios,
+    )
+    expected_id = hashlib.sha256(canonical_json(identity)).hexdigest()
     if manifest["forecast_id"] != path.name or expected_id != path.name:
         raise ValueError("direct forecast identity/path mismatch")
-    try:
-        candidate = manifest["portfolios"]["candidate"]
-        base = manifest["portfolios"]["base"]
-        portfolio_hashes_match = (
-            hashlib.sha256(canonical_json(candidate)).hexdigest() == manifest["candidate_sha256"]
-            and hashlib.sha256(canonical_json(base)).hexdigest() == manifest["base_sha256"]
-        )
-    except (KeyError, TypeError, ValueError) as error:
-        raise ValueError("direct forecast portfolio identity is invalid") from error
-    if not portfolio_hashes_match:
-        raise ValueError("direct forecast portfolio hash mismatch")
     rows = _read_csv(payloads["etf_forecast.csv"], _ETF_COLUMNS, "direct ETF forecast CSV")
-    identities = {
-        item["ticker"]: item for item in manifest["target_series"]
-        if isinstance(item, dict) and isinstance(item.get("ticker"), str)
-    }
+    identities = {item["ticker"]: item for item in target_series}
     keys = set()
+    forecast_rows = []
     for row in rows:
         try:
             identity_row = identities[row["symbol"]]
@@ -589,16 +720,32 @@ def read_direct_forecast(path: Path, output_root: Path) -> tuple[dict[str, Any],
             or (row["isin"], row["exchange"], row["currency"]) != (
                 identity_row["isin"], identity_row["exchange"], identity_row["currency"]
             )
+            or row["history_count"] != str(identity_row["history_count"])
+            or row["history_status"] != identity_row["history_status"]
             or not all(math.isfinite(value) for value in quantiles)
             or not quantiles[0] <= quantiles[1] <= quantiles[2] or key in keys
         ):
             raise ValueError("direct ETF forecast CSV row is invalid or duplicate")
         keys.add(key)
-    if len(rows) != len(identities) * 36:
+        forecast_rows.append(ForecastRow(
+            origin, row["scenario"], row["symbol"], forecast_month, horizon, *quantiles,
+        ))
+    expected_keys = {
+        (item["ticker"], scenario, horizon)
+        for item in target_series for scenario in SCENARIO_NAMES for horizon in range(1, 13)
+    }
+    if keys != expected_keys:
         raise ValueError("direct ETF forecast CSV row count is invalid")
-    _read_csv(payloads["portfolio_paths.csv"], _PORTFOLIO_COLUMNS, "direct portfolio paths CSV")
-    _read_csv(payloads["scenario_sensitivity.csv"], _SENSITIVITY_COLUMNS, "direct sensitivity CSV")
-    _read_csv(payloads["volatility_snapshot.csv"], _VOLATILITY_COLUMNS, "direct volatility CSV")
+    forecast_rows = tuple(forecast_rows)
+    portfolio_rows = _portfolio_rows(candidate, base, forecast_rows)
+    if payloads["portfolio_paths.csv"] != _csv_bytes(portfolio_rows, _PORTFOLIO_COLUMNS):
+        raise ValueError("direct portfolio paths do not match ETF forecasts")
+    sensitivity_rows = _sensitivity_rows(target_series, forecast_rows, portfolio_rows)
+    if payloads["scenario_sensitivity.csv"] != _csv_bytes(sensitivity_rows, _SENSITIVITY_COLUMNS):
+        raise ValueError("direct sensitivity does not match ETF forecasts")
+    volatility_rows = _volatility_rows(target_series, forecast_rows, origin)
+    if payloads["volatility_snapshot.csv"] != _csv_bytes(volatility_rows, _VOLATILITY_COLUMNS):
+        raise ValueError("direct volatility does not match bound target history and ETF forecasts")
     return manifest, rows
 
 
@@ -630,12 +777,7 @@ def publish_direct_forecast(
     portfolios = {"candidate": candidate_payload, "base": base_payload}
     candidate_hash = _portfolio_hash(snapshot.candidate)
     base_hash = _portfolio_hash(snapshot.base)
-    target_series = [{
-        **_component_payload(series.component),
-        "history_count": len(series.returns),
-        "history_status": series.history_status,
-        "series_sha256": series.series_sha256,
-    } for series in snapshot.series]
+    target_series = [_target_series_payload(series) for series in snapshot.series]
     model = {
         "id": config.model_id,
         "revision": config.model_revision,
@@ -680,9 +822,9 @@ def publish_direct_forecast(
             "history_count": len(series_by_ticker[row.target].returns),
             "history_status": series_by_ticker[row.target].history_status,
         } for row in rows]
-        portfolio_rows = _portfolio_rows(snapshot, rows)
-        sensitivity_rows = _sensitivity_rows(snapshot, rows, portfolio_rows)
-        volatility_rows = _volatility_rows(snapshot, rows)
+        portfolio_rows = _portfolio_rows(snapshot.candidate, snapshot.base, rows)
+        sensitivity_rows = _sensitivity_rows(target_series, rows, portfolio_rows)
+        volatility_rows = _volatility_rows(target_series, rows, snapshot.common_origin)
         csv_files = {
             "etf_forecast.csv": _csv_bytes(etf_rows, _ETF_COLUMNS),
             "portfolio_paths.csv": _csv_bytes(portfolio_rows, _PORTFOLIO_COLUMNS),
@@ -735,12 +877,7 @@ def publish_direct_forecast(
                 model,
                 config.config_hash,
                 {"candidate": _portfolio_payload(current.candidate), "base": _portfolio_payload(current.base)},
-                [{
-                    **_component_payload(series.component),
-                    "history_count": len(series.returns),
-                    "history_status": series.history_status,
-                    "series_sha256": series.series_sha256,
-                } for series in current.series],
+                [_target_series_payload(series) for series in current.series],
                 {"vintage_id": current.price_vintage_id, "manifest_sha256": current.price_manifest_sha256},
                 current_vintage,
                 current.common_origin.isoformat(),
