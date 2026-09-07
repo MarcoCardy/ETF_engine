@@ -1,6 +1,7 @@
 import json
 import msvcrt
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -265,6 +266,10 @@ class EvaluationJobTests(TestCase):
                     except OSError as error:
                         self.skipTest(str(error))
                     try:
+                        if action == 'worker' and child == 'requests':
+                            shutil.copytree(linked.with_name(f'{child}-original'), external, dirs_exist_ok=True)
+                            self.assertTrue(args[1].is_file(), 'the linked request source must still exist')
+                        before = {path.relative_to(external): path.read_bytes() for path in external.rglob('*') if path.is_file()}
                         with patch.object(chronos_job, 'prepare_direct_evaluation_request', wraps=prepare_direct_evaluation_request) as prepare, patch.object(
                             chronos_job, 'evaluate_direct_request', wraps=evaluate_direct_request,
                         ) as evaluate, patch(
@@ -278,7 +283,7 @@ class EvaluationJobTests(TestCase):
                                     rejected = chronos_job.run_evaluation_worker(*args) == 2
                             except ValueError:
                                 rejected = True
-                            self.assertEqual(list(external.iterdir()), [], 'linked directory received published or staged files')
+                            self.assertEqual({path.relative_to(external): path.read_bytes() for path in external.rglob('*') if path.is_file()}, before)
                             prepare.assert_not_called()
                             evaluate.assert_not_called()
                             self.assertTrue(rejected)
@@ -290,6 +295,96 @@ class EvaluationJobTests(TestCase):
 
     def test_evaluation_job_linked_publication_children_block_worker_before_any_write(self):
         self._check_linked_publication_children('worker')
+
+    def _check_publication_race(self, action, child):
+        from tests.test_dashboard_chronos import DirectEvaluationTests
+        from perpetual_engine import dashboard_chronos
+
+        fixture = DirectEvaluationTests('runTest')
+        fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        fixture.refresh_counts(**{ticker: 49 for ticker in fixture.current_prices()})
+        output = fixture.paths.chronos_output_root
+        output.mkdir(parents=True, exist_ok=True)
+        with patch.object(chronos_job, 'prepare_direct_evaluation_request', wraps=dashboard_chronos.prepare_direct_evaluation_request), patch(
+            'perpetual_engine.dashboard_chronos.load_covariate_table', return_value=(fixture.macro, fixture.macro_vintage_id),
+        ):
+            if action == 'worker':
+                chronos_job.start_evaluation_job(fixture.paths, fixture.state, launcher=self.launcher)
+        linked = output / child
+        real_writer = dashboard_chronos.prepare_direct_evaluation_request if action == 'start' else dashboard_chronos.evaluate_direct_request
+        with tempfile.TemporaryDirectory() as directory:
+            external = Path(directory)
+            created_outside = []
+            real_mkdtemp = tempfile.mkdtemp
+
+            def swap_then_write(*args, **kwargs):
+                if linked.exists():
+                    linked.rename(linked.with_name(f'{child}-original'))
+                linked.symlink_to(external, target_is_directory=True)
+                return real_writer(*args, **kwargs)
+
+            def track_staging(*args, **kwargs):
+                if kwargs.get('dir') is not None and Path(kwargs['dir']).resolve().is_relative_to(external):
+                    created_outside.append(kwargs['dir'])
+                return real_mkdtemp(*args, **kwargs)
+
+            name = 'prepare_direct_evaluation_request' if action == 'start' else 'evaluate_direct_request'
+            try:
+                with patch.object(chronos_job, name, side_effect=swap_then_write), patch(
+                    'perpetual_engine.dashboard_chronos.load_covariate_table', return_value=(fixture.macro, fixture.macro_vintage_id),
+                ), patch('perpetual_engine.dashboard_chronos.load_covariate_vintage', return_value=fixture.macro), patch(
+                    'tempfile.mkdtemp', side_effect=track_staging,
+                ):
+                    try:
+                        if action == 'start':
+                            chronos_job.start_evaluation_job(fixture.paths, fixture.state, launcher=self.launcher)
+                        else:
+                            chronos_job.run_evaluation_worker(*self.worker_args())
+                    except ValueError:
+                        pass
+                self.assertEqual(list(external.iterdir()), [], 'race published an external archive')
+                self.assertEqual(created_outside, [], 'race created an external staging directory')
+            finally:
+                if linked.is_symlink():
+                    linked.unlink()
+
+    def test_evaluation_job_race_after_preflight_cannot_redirect_request_or_staging(self):
+        for child in ('requests', '.staging'):
+            with self.subTest(child=child):
+                self._check_publication_race('start', child)
+
+    def test_evaluation_job_race_after_preflight_cannot_redirect_result_or_staging(self):
+        for child in ('evaluations', '.staging'):
+            with self.subTest(child=child):
+                self._check_publication_race('worker', child)
+
+    def test_evaluation_publication_directories_cannot_be_swapped_at_commit(self):
+        from tests.test_dashboard_chronos import DirectEvaluationTests
+        from perpetual_engine import dashboard_chronos
+
+        fixture = DirectEvaluationTests('runTest')
+        fixture.setUp()
+        self.addCleanup(fixture.tearDown)
+        fixture.refresh_counts(**{ticker: 49 for ticker in fixture.current_prices()})
+        for child in ('requests', 'evaluations', '.staging'):
+            (fixture.paths.chronos_output_root / child).mkdir(parents=True, exist_ok=True)
+        real_replace = Path.replace
+        commits = []
+
+        def replace(stage, destination):
+            if Path(destination).parent.name in ('requests', 'evaluations'):
+                for child in ('requests', 'evaluations', '.staging'):
+                    path = fixture.paths.chronos_output_root / child
+                    with self.assertRaises(PermissionError):
+                        path.rename(path.with_name(f'{child}-swapped'))
+                commits.append(Path(destination).parent.name)
+            return real_replace(stage, destination)
+
+        with patch.object(Path, 'replace', replace):
+            request = fixture.prepare()
+            fixture.evaluate(request, Mock(side_effect=AssertionError('model must not run')))
+        self.assertEqual(commits, ['requests', 'evaluations'])
 
     def test_evaluation_job_exclusive_log_creation_never_truncates_collision(self):
         job_id = 'c' * 32

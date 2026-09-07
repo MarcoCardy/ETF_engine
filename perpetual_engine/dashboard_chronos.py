@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import csv
+import ctypes
 import hashlib
 import io
 import json
 import math
 import shutil
 import tempfile
+from contextlib import ExitStack, contextmanager
+from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -1190,6 +1193,39 @@ def _usable_origins(series: EtfTargetSeries, covariates: MonthlyTable) -> tuple[
     )[-36:]
 
 
+@contextmanager
+def _evaluation_publication(output_root: Path):
+    """Pin real directory names against Windows rename/delete through publication."""
+    if not output_root.is_absolute() or '..' in output_root.parts:
+        raise ValueError('evaluation output path must be absolute without traversal')
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = (wintypes.HANDLE,)
+    close.restype = wintypes.BOOL
+    directories = (*reversed(output_root.parents), output_root,
+                   *(output_root / name for name in ('requests', 'evaluations', '.staging')))
+    with ExitStack() as handles:
+        for path in directories:
+            # Each parent is already pinned: mkdir cannot traverse a concurrently replaced ancestor.
+            path.mkdir(exist_ok=True)
+            # OPEN_EXISTING, BACKUP_SEMANTICS | OPEN_REPARSE_POINT, share read/write but NOT delete.
+            handle = create(str(path), 0x80000000, 3, None, 3, 0x02200000, None)
+            if handle == ctypes.c_void_p(-1).value:
+                if ctypes.get_last_error() == 5 and path in output_root.parents:
+                    # An ancestor denied even metadata access, so this process cannot rename it either.
+                    continue
+                raise ctypes.WinError(ctypes.get_last_error())
+            handles.callback(close, handle)
+            if path.is_symlink() or path.resolve() != path or not path.is_dir():
+                raise ValueError('evaluation publication directory is not a real non-link path')
+        with _publication_lock(output_root):
+            yield
+
+
 def _immutable_request(destination: Path, payload: bytes) -> Path:
     parent = destination.parent.resolve()
     staging_root = (parent.parent / ".staging").resolve()
@@ -1285,7 +1321,7 @@ def prepare_direct_evaluation_request(paths: DashboardPaths, state: DashboardSta
     evaluation_id = hashlib.sha256(canonical_json(identity)).hexdigest()
     payload = canonical_json({**identity, "evaluation_id": evaluation_id})
     destination = output_root / "requests" / evaluation_id
-    with _publication_lock(output_root):
+    with _evaluation_publication(output_root):
         if hashlib.sha256(paths.chronos_config.read_bytes()).hexdigest() != identity["hashes"]["config_file_sha256"]:
             raise ValueError("Chronos config hash changed while preparing evaluation")
         if hashlib.sha256(price_manifest.read_bytes()).hexdigest() != identity["hashes"]["price_manifest_sha256"]:
@@ -1808,7 +1844,7 @@ def evaluate_direct_request(
             raise ValueError("evaluation request changed during evaluation")
         _validated_request(project_root, request_path)
 
-    with _publication_lock(output_root):
+    with _evaluation_publication(output_root):
         _atomic_snapshot(
             destination, output_root / ".staging", files, "direct-evaluation", precommit=inputs_unchanged,
         )
