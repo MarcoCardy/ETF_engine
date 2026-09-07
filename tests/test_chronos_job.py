@@ -238,6 +238,59 @@ class EvaluationJobTests(TestCase):
         self.assertEqual(done.state, 'SUCCEEDED')
         self.assertTrue((done.result_path / 'covariate_contribution.csv').is_file())
 
+    def _check_linked_publication_children(self, action):
+        from tests.test_dashboard_chronos import DirectEvaluationTests
+        from perpetual_engine.dashboard_chronos import prepare_direct_evaluation_request, evaluate_direct_request
+
+        for child in ('requests', 'evaluations', '.staging'):
+            with self.subTest(action=action, child=child):
+                fixture = DirectEvaluationTests('runTest')
+                fixture.setUp()
+                self.addCleanup(fixture.tearDown)
+                fixture.refresh_counts(**{ticker: 49 for ticker in fixture.current_prices()})
+                fixture.paths.chronos_output_root.mkdir(parents=True, exist_ok=True)
+                if action == 'worker':
+                    with patch.object(chronos_job, 'prepare_direct_evaluation_request', wraps=prepare_direct_evaluation_request), patch(
+                        'perpetual_engine.dashboard_chronos.load_covariate_table', return_value=(fixture.macro, fixture.macro_vintage_id),
+                    ):
+                        chronos_job.start_evaluation_job(fixture.paths, fixture.state, launcher=self.launcher)
+                    args = self.worker_args()
+                linked = fixture.paths.chronos_output_root / child
+                if linked.exists():
+                    linked.rename(linked.with_name(f'{child}-original'))
+                with tempfile.TemporaryDirectory() as directory:
+                    external = Path(directory)
+                    try:
+                        linked.symlink_to(external, target_is_directory=True)
+                    except OSError as error:
+                        self.skipTest(str(error))
+                    try:
+                        with patch.object(chronos_job, 'prepare_direct_evaluation_request', wraps=prepare_direct_evaluation_request) as prepare, patch.object(
+                            chronos_job, 'evaluate_direct_request', wraps=evaluate_direct_request,
+                        ) as evaluate, patch(
+                            'perpetual_engine.dashboard_chronos.load_covariate_table', return_value=(fixture.macro, fixture.macro_vintage_id),
+                        ), patch('perpetual_engine.dashboard_chronos.load_covariate_vintage', return_value=fixture.macro):
+                            rejected = False
+                            try:
+                                if action == 'start':
+                                    chronos_job.start_evaluation_job(fixture.paths, fixture.state, launcher=self.launcher)
+                                else:
+                                    rejected = chronos_job.run_evaluation_worker(*args) == 2
+                            except ValueError:
+                                rejected = True
+                            self.assertEqual(list(external.iterdir()), [], 'linked directory received published or staged files')
+                            prepare.assert_not_called()
+                            evaluate.assert_not_called()
+                            self.assertTrue(rejected)
+                    finally:
+                        linked.unlink()
+
+    def test_evaluation_job_linked_publication_children_block_start_before_any_write(self):
+        self._check_linked_publication_children('start')
+
+    def test_evaluation_job_linked_publication_children_block_worker_before_any_write(self):
+        self._check_linked_publication_children('worker')
+
     def test_evaluation_job_exclusive_log_creation_never_truncates_collision(self):
         job_id = 'c' * 32
         log = self.paths.chronos_job.parent / 'chronos_jobs' / f'{job_id}.log'

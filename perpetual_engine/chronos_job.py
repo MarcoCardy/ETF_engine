@@ -63,6 +63,8 @@ def _validated_paths(paths: DashboardPaths) -> DashboardPaths:
         raise ValueError('Chronos job paths must use the expected project directories')
     for field in fields(paths):
         _safe_path(root, getattr(paths, field.name))
+    for child in ('requests', 'evaluations', '.staging'):
+        _safe_path(root, paths.chronos_output_root / child)
     _safe_path(root, paths.chronos_job.parent / 'chronos_jobs')
     return paths
 
