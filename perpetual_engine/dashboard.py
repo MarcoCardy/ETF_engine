@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -305,10 +306,48 @@ def _render_comparisons(
             _show_error(error)
 
 
-def _render_chronos() -> None:
+def _render_chronos(paths: DashboardPaths, status: DashboardDataStatus | None) -> None:
     st.header("Previsioni Chronos")
-    st.info("Non ancora attivo: verrà aggiunto dopo la verifica delle analisi storiche.")
-    st.write("La fase successiva valuterà tasso BCE, Treasury USA decennale, inflazione USA, petrolio e liquidità mondiale, misurando il contributo predittivo di ogni serie.")
+    st.info("Modulo sperimentale in modalità shadow: non modifica il portafoglio e non genera ordini.")
+    risk_config = paths.project_root / "config" / "chronos_risk_v1.json"
+    risk_output = paths.project_root / "outputs" / "chronos_risk_v1"
+    if st.button("Calcola previsione rischio Chronos", disabled=status is None or not status.available):
+        try:
+            from perpetual_engine.chronos_risk import publish_current_risk_report
+
+            with st.spinner("Calcolo locale in corso…"):
+                st.session_state.chronos_risk_report = str(
+                    publish_current_risk_report(risk_config, risk_output) / "report.json"
+                )
+        except Exception as error:
+            _show_error(error)
+    report_path = st.session_state.get("chronos_risk_report")
+    if not report_path:
+        st.caption("Premi il pulsante per usare esclusivamente i prezzi già salvati; nessun aggiornamento dati viene eseguito.")
+        return
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+        baseline = report["baselines"]
+        left, middle, right = st.columns(3)
+        left.metric("Volatilità Chronos Q50 (20g)", f"{report['chronos_vol_median']:.2%}")
+        middle.metric("Volatilità Chronos Q90 (20g)", f"{report['chronos_vol_conservative']:.2%}")
+        right.metric("Regime diagnostico", report["risk_regime"])
+        st.dataframe(pd.DataFrame([
+            {"Misura": "sigma20", "Valore": baseline["sigma20"]},
+            {"Misura": "sigma60", "Valore": baseline["sigma60"]},
+            {"Misura": "EWMA 0,94", "Valore": baseline["ewma_094"]},
+            {"Misura": "sigmaForecast", "Valore": baseline["sigma_forecast"]},
+        ]), hide_index=True, use_container_width=True)
+        for horizon, values in report["forecasts"].items():
+            with st.expander(f"Orizzonte {horizon}"):
+                st.dataframe(pd.DataFrame({
+                    "Quantile": list(values["return_quantiles"]),
+                    "Rendimento": list(values["return_quantiles"].values()),
+                    "Volatilità": list(values["volatility_quantiles"].values()),
+                }), hide_index=True, use_container_width=True)
+        st.caption(f"Dati fino al {report['data_cutoff']} — modello {report['model']['id']} — nessuna probabilità di drawdown calcolata.")
+    except Exception as error:
+        _show_error(error)
 
 
 def main(paths: DashboardPaths | None = None) -> None:
@@ -336,7 +375,7 @@ def main(paths: DashboardPaths | None = None) -> None:
     elif section == "Confronti":
         _render_comparisons(paths, state, status)
     else:
-        _render_chronos()
+        _render_chronos(paths, status)
 
 
 if __name__ == "__main__":

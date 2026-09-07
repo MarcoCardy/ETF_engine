@@ -204,11 +204,12 @@ class DashboardAppTests(unittest.TestCase):
             },
         )
 
-    def test_chronos_section_is_inactive_without_model(self) -> None:
+    def test_chronos_section_exposes_shadow_mode_without_trading(self) -> None:
         app = self.run_app("Previsioni Chronos")
 
         self.assertFalse(app.exception)
-        self.assertIn("Non ancora attivo", app.info[0].value)
+        self.assertIn("modalità shadow", app.info[0].value)
+        self.assertIn("non genera ordini", app.info[0].value)
 
     def test_comparison_report_is_scoped_to_selection_and_shows_full_summary(self) -> None:
         output = self.comparison_report()

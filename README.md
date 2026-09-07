@@ -130,4 +130,23 @@ Per usare l'applicazione dal desktop:
 7. scaricare i CSV disponibili;
 8. chiudere la finestra del lanciatore per arrestare l'app locale.
 
-Chronos è visibile ma non attivo nella versione 1.
+## Chronos-2: rischio prospettico in modalità shadow
+
+Il modulo giornaliero usa i prezzi già salvati di SWDA e non aggiorna dati né modifica allocazioni. Produce quantili di rendimento e volatilità realizzata futura a 5, 10 e 20 sedute, confrontati con sigma20, sigma60, blend 35/65, EWMA 0,94 e persistenza.
+
+```powershell
+.venv\Scripts\python.exe -m perpetual_engine chronos risk-forecast `
+  --config config\chronos_risk_v1.json `
+  --output outputs\chronos_risk_v1
+```
+
+Walk-forward sulle ultime 36 origini settimanali:
+
+```powershell
+.venv\Scripts\python.exe -m perpetual_engine chronos risk-evaluate `
+  --config config\chronos_risk_v1.json `
+  --output outputs\chronos_risk_v1\evaluations `
+  --max-origins 36
+```
+
+I quantili non sono intervalli di confidenza classici e non vengono trasformati in probabilità di drawdown. ERP, CPI e fondamentali senza veri vintage storici restano esplicitamente dati di ricerca e non entrano ancora nel walk-forward giornaliero affidabile.

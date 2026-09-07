@@ -53,6 +53,13 @@ def _parser() -> argparse.ArgumentParser:
     chronos_reconcile.add_argument("--config", type=Path, required=True)
     chronos_reconcile.add_argument("--forecast-root", type=Path, required=True)
     chronos_reconcile.add_argument("--output", type=Path, required=True)
+    risk_forecast = chronos_commands.add_parser("risk-forecast", help="run the daily Chronos shadow-risk forecast")
+    risk_forecast.add_argument("--config", type=Path, required=True)
+    risk_forecast.add_argument("--output", type=Path, required=True)
+    risk_evaluate = chronos_commands.add_parser("risk-evaluate", help="run daily Chronos walk-forward evaluation")
+    risk_evaluate.add_argument("--config", type=Path, required=True)
+    risk_evaluate.add_argument("--output", type=Path, required=True)
+    risk_evaluate.add_argument("--max-origins", type=int, default=36)
     portfolio_refresh = chronos_commands.add_parser("portfolio-refresh")
     portfolio_refresh.add_argument("--config", type=Path, required=True)
     portfolio_report = chronos_commands.add_parser("portfolio-report")
@@ -134,6 +141,16 @@ def main(argv: list[str] | None = None) -> int:
             from perpetual_engine.chronos import reconcile_forecasts
 
             print(reconcile_forecasts(args.config, args.forecast_root, args.output))
+            return 0
+        if args.command == "chronos" and args.chronos_command == "risk-forecast":
+            from perpetual_engine.chronos_risk import publish_current_risk_report
+
+            print(publish_current_risk_report(args.config, args.output))
+            return 0
+        if args.command == "chronos" and args.chronos_command == "risk-evaluate":
+            from perpetual_engine.chronos_risk import publish_walk_forward_evaluation
+
+            print(publish_walk_forward_evaluation(args.config, args.output, max_origins=args.max_origins))
             return 0
         if args.command == "chronos" and args.chronos_command == "portfolio-refresh":
             from perpetual_engine.portfolio_monitor import refresh_portfolio_prices

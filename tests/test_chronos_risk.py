@@ -1,5 +1,6 @@
 import json
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -157,3 +158,64 @@ def test_market_risk_forecast_batches_horizons_with_past_only_covariates():
     assert tuple(item.horizon for item in forecasts) == (5, 10, 20)
     assert forecasts[0].return_quantiles == (-0.04, -0.02, 0.01, 0.03, 0.06)
     assert forecasts[-1].volatility_quantiles == (0.12, 0.15, 0.18, 0.22, 0.28)
+
+
+def test_pipeline_loading_is_forced_offline_and_restores_environment(monkeypatch):
+    from perpetual_engine.chronos_risk import load_risk_config, load_risk_predictor
+    from chronos import Chronos2Pipeline
+
+    config = load_risk_config(Path("config/chronos_risk_v1.json"))
+    seen = []
+
+    class Pipeline:
+        pass
+
+    def load(*args, **kwargs):
+        seen.append((os.environ.get("HF_HUB_OFFLINE"), kwargs))
+        return Pipeline()
+
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.setattr(Chronos2Pipeline, "from_pretrained", load)
+    load_risk_predictor(config)
+    assert seen[0][0] == "1"
+    assert seen[0][1]["local_files_only"] is True
+    assert "HF_HUB_OFFLINE" not in os.environ
+
+
+def test_current_report_exposes_baselines_five_quantiles_and_no_trade_signal():
+    from datetime import datetime, timezone
+    from perpetual_engine.chronos_risk import build_current_risk_report, load_risk_config
+
+    config = load_risk_config(Path("config/chronos_risk_v1.json"))
+    returns = np.linspace(-0.02, 0.025, 100)
+    dates = np.arange("2025-01-01", "2026-01-01", dtype="datetime64[D]")[:100]
+
+    def predictor(items, prediction_length, quantile_levels):
+        base = np.asarray([[[-0.04, -0.02, 0.01, 0.03, 0.06]], [[0.12, 0.15, 0.18, 0.22, 0.28]]])
+        return [np.tile(base, (1, prediction_length, 1))]
+
+    report = build_current_risk_report(
+        config, dates, returns, dataset_version="d" * 64, predictor=predictor,
+        issued_at=datetime(2026, 9, 7, tzinfo=timezone.utc),
+    )
+    assert report["mode"] == "SHADOW"
+    assert report["data_cutoff"] == str(dates[-1])
+    assert set(report["baselines"]) == {"sigma20", "sigma60", "sigma_forecast", "ewma_094", "naive_persistence"}
+    assert tuple(report["forecasts"]) == ("5d", "10d", "20d")
+    assert set(report["forecasts"]["20d"]["return_quantiles"]) == {"Q10", "Q25", "Q50", "Q75", "Q90"}
+    assert report["forecasts"]["20d"]["volatility_quantiles"]["Q90"] == 0.28
+    assert report["chronos_vol_median"] == 0.18
+    assert report["chronos_vol_conservative"] == 0.28
+    assert report["risk_regime"] == "HIGH_RISK"
+    assert "recommendation" not in report
+
+
+def test_cli_accepts_separate_daily_risk_forecast_command():
+    from perpetual_engine.cli import _parser
+
+    args = _parser().parse_args([
+        "chronos", "risk-forecast", "--config", "config/chronos_risk_v1.json",
+        "--output", "outputs/chronos_risk_v1",
+    ])
+    assert args.chronos_command == "risk-forecast"
+    assert args.config == Path("config/chronos_risk_v1.json")
