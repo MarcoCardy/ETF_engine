@@ -1202,7 +1202,12 @@ def _immutable_request(destination: Path, payload: bytes) -> Path:
         if destination.is_symlink() or destination.resolve().parent != parent:
             raise ValueError("evaluation request collision")
         children = tuple(destination.iterdir()) if destination.is_dir() else ()
-        if len(children) != 1 or children[0].name != "request.json" or children[0].read_bytes() != payload:
+        if (
+            len(children) != 1 or children[0].name != "request.json"
+            or children[0].is_symlink() or not children[0].is_file()
+            or children[0].resolve().parent != destination.resolve()
+            or children[0].read_bytes() != payload
+        ):
             raise ValueError("evaluation request collision")
         return children[0].resolve()
     stage = Path(tempfile.mkdtemp(prefix="direct-evaluation-request-", dir=staging_root)).resolve()
@@ -1658,6 +1663,8 @@ def _read_direct_evaluation(
     }
     if not isinstance(manifest, dict) or set(manifest) != fields or manifest.get("schema_version") != _EVALUATION_SCHEMA:
         raise ValueError("direct evaluation manifest schema is invalid")
+    if canonical_json(manifest) != payloads["manifest.json"]:
+        raise ValueError("direct evaluation manifest is not canonical")
     generated = manifest.get("generated_sha256")
     if not isinstance(generated, dict) or set(generated) != _EVALUATION_FILES - {"manifest.json"} or any(
         not _is_sha256(digest) or hashlib.sha256(payloads[name]).hexdigest() != digest

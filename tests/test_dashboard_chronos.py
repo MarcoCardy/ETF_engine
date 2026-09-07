@@ -912,3 +912,30 @@ class DirectEvaluationTests(DirectChronosFixture):
             "perpetual_engine.dashboard_chronos.load_covariate_vintage", return_value=self.macro,
         ), self.assertRaisesRegex(ValueError, "metric"):
             read_direct_evaluation(output, self.paths.chronos_output_root)
+
+    def test_existing_evaluation_request_rejects_symlinked_request_file(self):
+        self.refresh_counts()
+        request_path = self.prepare()
+        payload = request_path.read_bytes()
+        outside = self.root / "outside-request.json"
+        outside.write_bytes(payload)
+        request_path.unlink()
+        try:
+            request_path.symlink_to(outside)
+        except (NotImplementedError, OSError) as error:
+            self.skipTest(f"file symlinks unavailable: {error}")
+        with self.assertRaisesRegex(ValueError, "request collision"):
+            self.prepare()
+
+    def test_evaluation_reader_rejects_noncanonical_manifest_bytes(self):
+        from perpetual_engine.dashboard_chronos import read_direct_evaluation
+
+        self.refresh_counts()
+        output = self.evaluate(self.prepare(), self.variant_predictor)
+        manifest_path = output / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        with patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_vintage", return_value=self.macro,
+        ), self.assertRaisesRegex(ValueError, "canonical"):
+            read_direct_evaluation(output, self.paths.chronos_output_root)
