@@ -4,10 +4,11 @@ import hashlib
 import csv
 import json
 import math
+import statistics
 from datetime import date, datetime, timezone
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -681,3 +682,233 @@ class DirectReconciliationTests(DirectChronosFixture):
             ValueError, "inputs changed",
         ):
             dashboard_chronos.reconcile_direct_forecasts(self.paths, self.state)
+
+
+class DirectEvaluationTests(DirectChronosFixture):
+    def setUp(self):
+        super().setUp()
+        self.state_with_grid_candidate()
+        self.macro_vintage_id = "b" * 64
+        self.macro = self._evaluation_covariates()
+        manifest = self.paths.chronos_config.parent.parent / "data" / "chronos_v1" / "vintages" / self.macro_vintage_id / "manifest.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_bytes(b"frozen macro manifest\n")
+
+    @staticmethod
+    def csv_rows(path):
+        with path.open(newline="", encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))
+
+    @staticmethod
+    def _master_dates():
+        return months(100, date(2017, 11, 30))
+
+    def _evaluation_covariates(self):
+        from perpetual_engine.chronos_data import MonthlyTable, REQUIRED_V1_COVARIATES
+
+        dates = self._master_dates()[1:]
+        values = np.vstack([
+            np.arange(len(dates), dtype=float) / 100.0 + offset
+            for offset in range(len(REQUIRED_V1_COVARIATES))
+        ])
+        return MonthlyTable(dates, REQUIRED_V1_COVARIATES, values)
+
+    def refresh_counts(self, **counts):
+        master = self._master_dates()
+        defaults = {ticker: 90 for ticker in self.current_prices()}
+        defaults.update(counts)
+        payloads = {
+            ticker: daily_bytes(list(prices_from_returns(
+                master[-(count + 1):],
+                tuple(0.005 + ((index % 5) - 2) * 0.002 for index in range(count)),
+            ).items()))
+            for ticker, count in defaults.items()
+        }
+        self.refresh_prices(payloads)
+
+    def prepare(self):
+        from perpetual_engine.dashboard_chronos import prepare_direct_evaluation_request
+
+        with patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_table",
+            return_value=(self.macro, self.macro_vintage_id),
+        ):
+            return prepare_direct_evaluation_request(self.paths, self.state)
+
+    def evaluate(self, request, predictor):
+        from perpetual_engine.dashboard_chronos import evaluate_direct_request
+
+        with patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_vintage",
+            return_value=self.macro,
+        ):
+            return evaluate_direct_request(self.root, request, predictor=predictor)
+
+    @staticmethod
+    def variant_predictor(items, prediction_length, quantile_levels):
+        from perpetual_engine.chronos_data import REQUIRED_V1_COVARIATES
+
+        assert prediction_length == 12
+        assert quantile_levels == [0.1, 0.5, 0.9]
+        results = []
+        for item in items:
+            enabled = tuple(item.get("past_covariates", ()))
+            if not enabled:
+                offset = 0.004
+            elif len(enabled) == 1:
+                offset = 0.002
+            elif len(enabled) == 5:
+                offset = 0.001
+            else:
+                missing = next(name for name in REQUIRED_V1_COVARIATES if name not in enabled)
+                offset = {
+                    "ECB_DFR": 0.004,
+                    "US_TREASURY_10Y": 0.0,
+                    "BRENT_RETURN": 0.001,
+                }.get(missing, 0.004)
+            median = 0.005 + offset
+            results.append(np.tile(np.asarray([[[median - 0.002, median, median + 0.002]]]), (1, 12, 1)))
+        return results
+
+    def test_evaluation_caps_each_scope_at_36_safe_origins_and_chunks_predictions(self):
+        self.refresh_counts()
+        request = self.prepare()
+        calls = []
+
+        def predictor(items, prediction_length, quantile_levels):
+            calls.append(items)
+            return self.variant_predictor(items, prediction_length, quantile_levels)
+
+        output = self.evaluate(request, predictor)
+        manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(manifest["evaluation_origins"]), {
+            "SWDA.MI", "IWMO.MI", "IWQU.MI", "GRID.MI", "CANDIDATE_PORTFOLIO",
+        })
+        self.assertEqual({value["count"] for value in manifest["evaluation_origins"].values()}, {36})
+        self.assertTrue(calls)
+        self.assertLessEqual(max(map(len, calls)), 36)
+        self.assertGreaterEqual(min(item["target"].shape[1] for call in calls for item in call), 36)
+        self.assertTrue(all("future_covariates" not in item for call in calls for item in call))
+        self.assertTrue(all(
+            all(len(values) == item["target"].shape[1] for values in item.get("past_covariates", {}).values())
+            for call in calls for item in call
+        ))
+        predictions = self.csv_rows(output / "predictions.csv")
+        self.assertNotIn("ORACLE_FUTURE_RATE_UPPER_BOUND", {row["variant"] for row in predictions})
+        self.assertIn("ZERO_RETURN_BASELINE", {row["variant"] for row in predictions})
+
+    def test_mixed_history_evaluates_each_eligible_etf_and_gates_only_ineligible_scopes(self):
+        self.refresh_counts(**{"IWQU.MI": 59, "GRID.MI": 49})
+        output = self.evaluate(self.prepare(), self.variant_predictor)
+        rows = self.csv_rows(output / "covariate_contribution.csv")
+        by_scope = {}
+        for row in rows:
+            by_scope.setdefault(row["scope"], set()).add(row["classification"])
+        self.assertNotEqual(by_scope["SWDA.MI"], {"INSUFFICIENT_HISTORY"})
+        self.assertNotEqual(by_scope["IWMO.MI"], {"INSUFFICIENT_HISTORY"})
+        self.assertEqual(by_scope["IWQU.MI"], {"INSUFFICIENT_HISTORY"})
+        self.assertEqual(by_scope["GRID.MI"], {"INSUFFICIENT_HISTORY"})
+        self.assertEqual(by_scope["CANDIDATE_PORTFOLIO"], {"INSUFFICIENT_HISTORY"})
+        self.assertEqual({row["origin_count"] for row in rows if row["scope"] == "SWDA.MI"}, {"36"})
+        self.assertEqual({row["origin_count"] for row in rows if row["scope"] == "GRID.MI"}, {"2"})
+
+    def test_all_short_history_publishes_insufficient_history_without_loading_model(self):
+        self.refresh_counts(**{ticker: 49 for ticker in self.current_prices()})
+        output = self.evaluate(
+            self.prepare(), Mock(side_effect=AssertionError("model must not run")),
+        )
+        rows = self.csv_rows(output / "covariate_contribution.csv")
+        self.assertEqual({row["classification"] for row in rows}, {"INSUFFICIENT_HISTORY"})
+        self.assertEqual({row["loss_metric"] for row in rows}, {"PINBALL", "MAE_Q50"})
+        self.assertEqual({row["origin_count"] for row in rows}, {"2"})
+
+    def test_contribution_metrics_and_volatility_use_scope_specific_origins(self):
+        self.refresh_counts()
+        output = self.evaluate(self.prepare(), self.variant_predictor)
+        contributions = self.csv_rows(output / "covariate_contribution.csv")
+        self.assertEqual(
+            {row["loss_metric"] for row in contributions if row["scope"] != "CANDIDATE_PORTFOLIO"},
+            {"PINBALL"},
+        )
+        self.assertEqual(
+            {row["loss_metric"] for row in contributions if row["scope"] == "CANDIDATE_PORTFOLIO"},
+            {"MAE_Q50"},
+        )
+        conditional = [row for row in contributions if row["comparison"] == "CONDITIONAL"]
+        self.assertEqual({row["classification"] for row in conditional}, {"USEFUL", "HARMFUL", "INCONCLUSIVE"})
+        diagnostics = self.csv_rows(output / "volatility_diagnostics.csv")
+        first = diagnostics[0]
+        request = json.loads((self.prepare()).read_text(encoding="utf-8"))
+        series = next(item for item in request["series"] if item["symbol"] == first["symbol"])
+        position = series["months"].index(first["origin"])
+        self.assertAlmostEqual(
+            float(first["trailing_volatility_12m"]),
+            statistics.stdev(series["returns"][position - 11:position + 1]) * math.sqrt(12),
+        )
+        metrics = self.csv_rows(output / "metrics.csv")
+        self.assertEqual({row["origin_count"] for row in metrics}, {"36"})
+
+    def test_request_binds_only_candidate_series_and_worker_revalidates_before_model_load(self):
+        self.refresh_counts()
+        request_path = self.prepare()
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        self.assertEqual(tuple(item["symbol"] for item in request["series"]), (
+            "SWDA.MI", "IWMO.MI", "IWQU.MI", "GRID.MI",
+        ))
+        self.assertTrue(all(not Path(value).is_absolute() for value in request["paths"].values()))
+        from perpetual_engine.dashboard_chronos import evaluate_direct_request
+        for name in ("config", "price_manifest", "macro_manifest"):
+            with self.subTest(name=name):
+                bound = self.root / request["paths"][name]
+                original = bound.read_bytes()
+                bound.write_bytes(original + b"\n")
+                loader = Mock(side_effect=AssertionError("model must not load"))
+                try:
+                    with patch("perpetual_engine.dashboard_chronos.load_chronos_predictor", loader), patch(
+                        "perpetual_engine.dashboard_chronos.load_covariate_vintage",
+                        return_value=self.macro,
+                    ), self.assertRaisesRegex(ValueError, f"{name.split('_')[0]}.*hash"):
+                        evaluate_direct_request(self.root, request_path)
+                finally:
+                    bound.write_bytes(original)
+                loader.assert_not_called()
+
+    def test_evaluation_loads_model_once_and_reuses_only_byte_identical_five_file_archive(self):
+        self.refresh_counts()
+        request = self.prepare()
+        loader = Mock(return_value=self.variant_predictor)
+        with patch("perpetual_engine.dashboard_chronos.load_chronos_predictor", loader), patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_vintage",
+            return_value=self.macro,
+        ):
+            first = __import__("perpetual_engine.dashboard_chronos", fromlist=["evaluate_direct_request"]).evaluate_direct_request(
+                self.root, request,
+            )
+        loader.assert_called_once()
+        self.assertEqual({path.name for path in first.iterdir()}, {
+            "predictions.csv", "metrics.csv", "covariate_contribution.csv", "volatility_diagnostics.csv", "manifest.json",
+        })
+        before = {path.name: path.read_bytes() for path in first.iterdir()}
+        repeated = self.evaluate(request, Mock(side_effect=AssertionError("archive must be reused")))
+        self.assertEqual(repeated, first)
+        self.assertEqual(before, {path.name: path.read_bytes() for path in repeated.iterdir()})
+        (first / "predictions.csv").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "hash|collision"):
+            self.evaluate(request, self.variant_predictor)
+
+    def test_evaluation_reader_rejects_rehashed_non_finite_metric(self):
+        from perpetual_engine.dashboard_chronos import read_direct_evaluation
+
+        self.refresh_counts()
+        output = self.evaluate(self.prepare(), self.variant_predictor)
+        rows = self.csv_rows(output / "metrics.csv")
+        rows[0]["mae_q50"] = "nan"
+        DirectForecastTests.write_csv_rows(output / "metrics.csv", rows)
+        manifest_path = output / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["generated_sha256"]["metrics.csv"] = hashlib.sha256((output / "metrics.csv").read_bytes()).hexdigest()
+        manifest_path.write_bytes(canonical_json(manifest))
+        with patch(
+            "perpetual_engine.dashboard_chronos.load_covariate_vintage", return_value=self.macro,
+        ), self.assertRaisesRegex(ValueError, "metric"):
+            read_direct_evaluation(output, self.paths.chronos_output_root)

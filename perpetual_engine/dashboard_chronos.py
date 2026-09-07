@@ -5,6 +5,8 @@ import hashlib
 import io
 import json
 import math
+import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -26,7 +28,10 @@ from perpetual_engine.chronos import (
     _publication_lock,
     _require_v1,
     ecb_scenarios,
+    evaluation_variants,
     load_chronos_predictor,
+    moving_block_interval,
+    pinball_loss,
 )
 from perpetual_engine.chronos_data import (
     ChronosConfig,
@@ -34,6 +39,7 @@ from perpetual_engine.chronos_data import (
     REQUIRED_V1_COVARIATES,
     load_chronos_config,
     load_covariate_table,
+    load_covariate_vintage,
 )
 from perpetual_engine.io import canonical_json
 from perpetual_engine.portfolio_monitor import ComponentSpec, load_current_portfolio_prices, load_portfolio_config
@@ -1109,3 +1115,695 @@ def publish_direct_forecast(
             result = DirectForecastResult(identifier, destination.resolve(), snapshot.common_origin, candidate_hash, base_hash)
     reconcile_direct_forecasts(paths, state)
     return result
+
+
+PREDICTION_COLUMNS = (
+    "variant", "origin", "scope", "symbol", "isin", "forecast_month", "horizon",
+    "actual", "q10", "q50", "q90",
+)
+EVALUATION_METRIC_COLUMNS = (
+    "variant", "scope", "symbol", "isin", "horizon", "origin_count",
+    "mae_q50", "mean_pinball_loss", "interval_80_coverage",
+)
+CONTRIBUTION_COLUMNS = (
+    "covariate", "comparison", "scope", "horizon", "loss_metric", "origin_count",
+    "loss_without", "loss_with", "improvement", "ci_low", "ci_high", "classification",
+)
+EVALUATION_VOLATILITY_COLUMNS = (
+    "origin", "scope", "symbol", "isin", "horizon", "origin_count",
+    "trailing_volatility_12m", "volatility_tercile", "q10", "q50", "q90",
+    "interval_width", "actual", "signed_error", "absolute_error", "interval_hit",
+)
+_EVALUATION_FILES = {
+    "predictions.csv", "metrics.csv", "covariate_contribution.csv",
+    "volatility_diagnostics.csv", "manifest.json",
+}
+_REQUEST_SCHEMA = "DIRECT_CHRONOS_EVALUATION_REQUEST_V1"
+_EVALUATION_SCHEMA = "DIRECT_CHRONOS_EVALUATION_V1"
+
+
+def _project_relative(project_root: Path, path: Path, label: str) -> str:
+    root = project_root.resolve()
+    resolved = path.resolve()
+    if resolved == root or not resolved.is_relative_to(root):
+        raise ValueError(f"{label} escapes project root")
+    return resolved.relative_to(root).as_posix()
+
+
+def _resolved_request_path(project_root: Path, value: object, label: str) -> Path:
+    if not isinstance(value, str) or not value or Path(value).is_absolute():
+        raise ValueError(f"{label} must be a project-relative path")
+    root = project_root.resolve()
+    resolved = (root / value).resolve()
+    if resolved == root or not resolved.is_relative_to(root):
+        raise ValueError(f"{label} escapes project root")
+    return resolved
+
+
+def _candidate_evaluation_series(snapshot: DirectTargetSnapshot) -> tuple[EtfTargetSeries, ...]:
+    by_identity = {(series.component.ticker, series.component.isin): series for series in snapshot.series}
+    try:
+        result = tuple(by_identity[(item.ticker, item.isin)] for item in snapshot.candidate.components)
+    except KeyError as error:
+        raise ValueError("candidate ETF series is missing from the bound target snapshot") from error
+    if len(result) != 4 or len({item.component.ticker for item in result}) != 4:
+        raise ValueError("evaluation requires exactly four unique candidate ETF series")
+    return result
+
+
+def _usable_origins(series: EtfTargetSeries, covariates: MonthlyTable) -> tuple[str, ...]:
+    if covariates.names != REQUIRED_V1_COVARIATES or covariates.values.shape != (
+        len(REQUIRED_V1_COVARIATES), len(covariates.months)
+    ) or not np.isfinite(covariates.values).all():
+        raise ValueError("evaluation macro table columns, shape, or values are invalid")
+    macro_index = {month: index for index, month in enumerate(covariates.months)}
+    if len(macro_index) != len(covariates.months):
+        raise ValueError("evaluation macro months are duplicated")
+    if any(month not in macro_index for month in series.months):
+        raise ValueError(f"{series.component.ticker}: macro history must cover the complete evaluation series")
+    indices = tuple(macro_index[month] for month in series.months)
+    if indices != tuple(range(indices[0], indices[0] + len(indices))):
+        raise ValueError(f"{series.component.ticker}: macro and ETF evaluation histories are not contiguous")
+    return tuple(
+        series.months[index].isoformat()
+        for index in range(35, len(series.returns) - 12)
+    )[-36:]
+
+
+def _immutable_request(destination: Path, payload: bytes) -> Path:
+    parent = destination.parent.resolve()
+    staging_root = (parent.parent / ".staging").resolve()
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        staging_root.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise ValueError("evaluation request ancestor collision") from error
+    if destination.exists():
+        if destination.is_symlink() or destination.resolve().parent != parent:
+            raise ValueError("evaluation request collision")
+        children = tuple(destination.iterdir()) if destination.is_dir() else ()
+        if len(children) != 1 or children[0].name != "request.json" or children[0].read_bytes() != payload:
+            raise ValueError("evaluation request collision")
+        return children[0].resolve()
+    stage = Path(tempfile.mkdtemp(prefix="direct-evaluation-request-", dir=staging_root)).resolve()
+    try:
+        (stage / "request.json").write_bytes(payload)
+        if (stage / "request.json").read_bytes() != payload:
+            raise ValueError("evaluation request staged bytes changed")
+        stage.replace(destination)
+        return (destination / "request.json").resolve()
+    except Exception:
+        if stage.exists() and stage.is_relative_to(staging_root):
+            shutil.rmtree(stage)
+        raise
+
+
+def prepare_direct_evaluation_request(paths: DashboardPaths, state: DashboardState) -> Path:
+    project_root = paths.project_root.resolve()
+    output_root = paths.chronos_output_root.resolve()
+    if output_root == project_root or not output_root.is_relative_to(project_root):
+        raise ValueError("direct evaluation output escapes project root")
+    config_bytes = paths.chronos_config.read_bytes()
+    config = load_chronos_config(paths.chronos_config)
+    _require_v1(config)
+    snapshot = load_etf_target_snapshot(paths, state)
+    covariates, macro_vintage_id = load_covariate_table(config)
+    if not _is_sha256(macro_vintage_id):
+        raise ValueError("macro vintage ID is invalid")
+    series = _candidate_evaluation_series(snapshot)
+    origins = {item.component.ticker: _usable_origins(item, covariates) for item in series}
+    price_config = load_portfolio_config(paths.runtime_config, project_root=project_root)
+    price_manifest = price_config.data_root / "vintages" / snapshot.price_vintage_id / "manifest.json"
+    macro_manifest = config.data_root / "vintages" / macro_vintage_id / "manifest.json"
+    price_bytes = price_manifest.read_bytes()
+    macro_bytes = macro_manifest.read_bytes()
+    if hashlib.sha256(price_bytes).hexdigest() != snapshot.price_manifest_sha256:
+        raise ValueError("price manifest hash changed while preparing evaluation")
+    candidate = _portfolio_payload(snapshot.candidate)
+    candidate_hash = _portfolio_hash(snapshot.candidate)
+    model = {
+        "id": config.model_id, "revision": config.model_revision, "package": "chronos-forecasting",
+        "package_version": _chronos_package_version(), "device": config.device,
+    }
+    identity = {
+        "schema_version": _REQUEST_SCHEMA,
+        "paths": {
+            "config": _project_relative(project_root, paths.chronos_config, "Chronos config"),
+            "price_manifest": _project_relative(project_root, price_manifest, "price manifest"),
+            "macro_manifest": _project_relative(project_root, macro_manifest, "macro manifest"),
+            "output_root": _project_relative(project_root, output_root, "evaluation output"),
+        },
+        "hashes": {
+            "config_file_sha256": hashlib.sha256(config_bytes).hexdigest(),
+            "config_sha256": config.config_hash,
+            "candidate_sha256": candidate_hash,
+            "price_manifest_sha256": snapshot.price_manifest_sha256,
+            "macro_manifest_sha256": hashlib.sha256(macro_bytes).hexdigest(),
+        },
+        "model": model,
+        "macro_vintage_id": macro_vintage_id,
+        "candidate": candidate,
+        "series": [{
+            "id": item.component.component_id,
+            "name": item.component.name,
+            "symbol": item.component.ticker,
+            "isin": item.component.isin,
+            "exchange": item.component.exchange,
+            "currency": item.component.currency,
+            "weight": item.component.weight,
+            "months": [month.isoformat() for month in item.months],
+            "returns": [float(value) for value in item.returns],
+            "series_sha256": item.series_sha256,
+            "eligible_origins": list(origins[item.component.ticker]),
+        } for item in series],
+    }
+    evaluation_id = hashlib.sha256(canonical_json(identity)).hexdigest()
+    payload = canonical_json({**identity, "evaluation_id": evaluation_id})
+    destination = output_root / "requests" / evaluation_id
+    with _publication_lock(output_root):
+        if hashlib.sha256(paths.chronos_config.read_bytes()).hexdigest() != identity["hashes"]["config_file_sha256"]:
+            raise ValueError("Chronos config hash changed while preparing evaluation")
+        if hashlib.sha256(price_manifest.read_bytes()).hexdigest() != identity["hashes"]["price_manifest_sha256"]:
+            raise ValueError("price manifest hash changed while preparing evaluation")
+        if hashlib.sha256(macro_manifest.read_bytes()).hexdigest() != identity["hashes"]["macro_manifest_sha256"]:
+            raise ValueError("macro manifest hash changed while preparing evaluation")
+        return _immutable_request(destination, payload)
+
+
+def _validated_request(
+    project_root: Path,
+    request_path: Path,
+) -> tuple[dict[str, Any], ChronosConfig, DirectPortfolio, tuple[dict[str, Any], ...], MonthlyTable, str]:
+    root = project_root.resolve()
+    request_path = request_path.resolve()
+    expected_requests = (root / "outputs" / "dashboard_chronos_v1" / "requests").resolve()
+    if (
+        not request_path.is_file() or request_path.name != "request.json"
+        or request_path.parent.parent != expected_requests or not _is_sha256(request_path.parent.name)
+    ):
+        raise ValueError("evaluation request path escapes request root")
+    request_bytes = request_path.read_bytes()
+    try:
+        payload = json.loads(request_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("evaluation request is malformed") from error
+    required = {
+        "schema_version", "evaluation_id", "paths", "hashes", "model",
+        "macro_vintage_id", "candidate", "series",
+    }
+    if not isinstance(payload, dict) or set(payload) != required or payload.get("schema_version") != _REQUEST_SCHEMA:
+        raise ValueError("evaluation request schema is invalid")
+    if canonical_json(payload) != request_bytes:
+        raise ValueError("evaluation request is not canonical")
+    identity = {name: value for name, value in payload.items() if name != "evaluation_id"}
+    evaluation_id = hashlib.sha256(canonical_json(identity)).hexdigest()
+    if payload.get("evaluation_id") != evaluation_id or request_path.parent.name != evaluation_id:
+        raise ValueError("evaluation request identity mismatch")
+    paths = payload.get("paths")
+    hashes = payload.get("hashes")
+    if not isinstance(paths, dict) or set(paths) != {"config", "price_manifest", "macro_manifest", "output_root"}:
+        raise ValueError("evaluation request paths are invalid")
+    if not isinstance(hashes, dict) or set(hashes) != {
+        "config_file_sha256", "config_sha256", "candidate_sha256",
+        "price_manifest_sha256", "macro_manifest_sha256",
+    } or any(not _is_sha256(value) for value in hashes.values()):
+        raise ValueError("evaluation request hashes are invalid")
+    resolved = {name: _resolved_request_path(root, value, name) for name, value in paths.items()}
+    if resolved["output_root"] != (root / "outputs" / "dashboard_chronos_v1").resolve():
+        raise ValueError("evaluation output root is invalid")
+    for name, hash_name in (
+        ("config", "config_file_sha256"),
+        ("price_manifest", "price_manifest_sha256"),
+        ("macro_manifest", "macro_manifest_sha256"),
+    ):
+        try:
+            digest = hashlib.sha256(resolved[name].read_bytes()).hexdigest()
+        except OSError as error:
+            raise ValueError(f"evaluation {name} path is missing") from error
+        if digest != hashes[hash_name]:
+            raise ValueError(f"evaluation {name} hash mismatch")
+    config = load_chronos_config(resolved["config"])
+    _require_v1(config)
+    if config.config_hash != hashes["config_sha256"]:
+        raise ValueError("evaluation config hash mismatch")
+    model = payload.get("model")
+    expected_model = {
+        "id": config.model_id, "revision": config.model_revision, "package": "chronos-forecasting",
+        "package_version": _chronos_package_version(), "device": config.device,
+    }
+    if model != expected_model:
+        raise ValueError("evaluation model identity is invalid")
+    if (
+        payload.get("macro_vintage_id") != resolved["macro_manifest"].parent.name
+        or not _is_sha256(payload.get("macro_vintage_id"))
+        or resolved["macro_manifest"] != (
+            config.data_root / "vintages" / payload["macro_vintage_id"] / "manifest.json"
+        ).resolve()
+    ):
+        raise ValueError("evaluation macro vintage identity is invalid")
+    candidate = _portfolio_from_payload(payload.get("candidate"), "candidate")
+    if _portfolio_hash(candidate) != hashes["candidate_sha256"]:
+        raise ValueError("evaluation candidate hash mismatch")
+    raw_series = payload.get("series")
+    if not isinstance(raw_series, list) or len(raw_series) != 4:
+        raise ValueError("evaluation requires exactly four candidate ETF series")
+    series: list[dict[str, Any]] = []
+    fields = {
+        "id", "name", "symbol", "isin", "exchange", "currency", "weight",
+        "months", "returns", "series_sha256", "eligible_origins",
+    }
+    for raw, component in zip(raw_series, candidate.components):
+        if not isinstance(raw, dict) or set(raw) != fields:
+            raise ValueError("evaluation ETF series schema is invalid")
+        if tuple(raw[name] for name in ("id", "name", "symbol", "isin", "exchange", "currency", "weight")) != (
+            component.component_id, component.name, component.ticker, component.isin,
+            component.exchange, component.currency, component.weight,
+        ):
+            raise ValueError("evaluation ETF series identity is invalid")
+        if (
+            not isinstance(raw["months"], list) or not all(isinstance(value, str) for value in raw["months"])
+            or not isinstance(raw["returns"], list)
+            or not all(type(value) in (int, float) and math.isfinite(value) for value in raw["returns"])
+            or len(raw["months"]) != len(raw["returns"])
+            or not isinstance(raw["eligible_origins"], list)
+            or not all(isinstance(value, str) for value in raw["eligible_origins"])
+        ):
+            raise ValueError("evaluation ETF series values are invalid")
+        try:
+            parsed_months = tuple(date.fromisoformat(value) for value in raw["months"])
+            returns = np.asarray(raw["returns"], dtype=float)
+        except (TypeError, ValueError) as error:
+            raise ValueError("evaluation ETF series values are invalid") from error
+        if (
+            len(parsed_months) < 12 or returns.shape != (len(parsed_months),) or not np.isfinite(returns).all()
+            or any(month != _month_end(month) for month in parsed_months)
+            or any(current != _next_month_end(previous) for previous, current in zip(parsed_months, parsed_months[1:]))
+            or not _is_sha256(raw["series_sha256"])
+            or hashlib.sha256(_series_csv(parsed_months, returns)).hexdigest() != raw["series_sha256"]
+        ):
+            raise ValueError("evaluation ETF series values or hash are invalid")
+        series.append({**raw, "parsed_months": parsed_months, "array": returns})
+    macro = load_covariate_vintage(config, payload["macro_vintage_id"])
+    for item in series:
+        target = EtfTargetSeries(
+            DirectComponent(item["id"], item["name"], item["symbol"], item["isin"], item["exchange"], item["currency"], item["weight"]),
+            item["parsed_months"], item["array"],
+            "STORICO_BREVE" if len(item["array"]) < 60 else "SUFFICIENT_HISTORY", item["series_sha256"],
+        )
+        if list(_usable_origins(target, macro)) != item["eligible_origins"]:
+            raise ValueError(f"{item['symbol']}: evaluation eligible origins changed")
+    return payload, config, candidate, tuple(series), macro, hashlib.sha256(request_bytes).hexdigest()
+
+
+def _scope_origins(series: tuple[dict[str, Any], ...]) -> tuple[dict[str, tuple[str, ...]], dict[str, bool]]:
+    origins = {item["symbol"]: tuple(item["eligible_origins"]) for item in series}
+    eligible = {
+        item["symbol"]: len(item["returns"]) >= 60 and len(item["eligible_origins"]) >= 12
+        for item in series
+    }
+    shared = set(origins[series[0]["symbol"]])
+    for item in series[1:]:
+        shared.intersection_update(origins[item["symbol"]])
+    origins["CANDIDATE_PORTFOLIO"] = tuple(sorted(shared))[-36:]
+    eligible["CANDIDATE_PORTFOLIO"] = all(eligible[item["symbol"]] for item in series) and len(origins["CANDIDATE_PORTFOLIO"]) >= 12
+    return origins, eligible
+
+
+def _direct_prediction_chunk(predictor: Callable, items: list[dict[str, object]], config: ChronosConfig) -> list[np.ndarray]:
+    raw = predictor(items, prediction_length=12, quantile_levels=list(config.quantiles))
+    results = raw[0] if isinstance(raw, tuple) and len(raw) == 2 else raw
+    if not isinstance(results, (list, tuple)) or len(results) != len(items):
+        raise ValueError("predictor must return one result per direct evaluation item")
+    arrays = [np.asarray(result, dtype=float) for result in results]
+    if any(
+        array.shape != (1, 12, 3) or not np.isfinite(array).all()
+        or np.any(array[:, :, 0] > array[:, :, 1]) or np.any(array[:, :, 1] > array[:, :, 2])
+        for array in arrays
+    ):
+        raise ValueError("direct evaluation result must be finite ordered (1, 12, 3) quantiles")
+    return arrays
+
+
+def _mean_pinball(rows: list[dict[str, object]]) -> float:
+    actual = np.asarray([row["actual"] for row in rows], dtype=float)
+    return float(np.mean([
+        pinball_loss(actual, np.asarray([row[name] for row in rows], dtype=float), quantile)
+        for name, quantile in (("q10", 0.1), ("q50", 0.5), ("q90", 0.9))
+    ]))
+
+
+def _selected_horizon(rows: list[dict[str, object]], horizon: int | str) -> list[dict[str, object]]:
+    return rows if horizon == "ALL" else [row for row in rows if row["horizon"] == horizon]
+
+
+def _evaluation_derived(
+    predictions: list[dict[str, object]],
+    series: tuple[dict[str, Any], ...],
+    candidate: DirectPortfolio,
+    config: ChronosConfig,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], dict[str, dict[str, object]]]:
+    origins, eligible = _scope_origins(series)
+    variants = tuple(name for name, _enabled in evaluation_variants(REQUIRED_V1_COVARIATES))
+    all_variants = (*variants, "ZERO_RETURN_BASELINE")
+    by_scope_variant = {
+        (scope, variant): [row for row in predictions if row["scope"] == scope and row["variant"] == variant]
+        for scope in origins for variant in all_variants
+    }
+    component_index = {item["symbol"]: item for item in series}
+    prediction_index = {
+        (row["scope"], row["variant"], row["origin"], row["horizon"]): row
+        for row in predictions
+    }
+    portfolio_rows: dict[str, list[dict[str, object]]] = {variant: [] for variant in all_variants}
+    if eligible["CANDIDATE_PORTFOLIO"]:
+        for variant in all_variants:
+            for origin in origins["CANDIDATE_PORTFOLIO"]:
+                for horizon in range(1, 13):
+                    selected = [prediction_index[(item.ticker, variant, origin, horizon)] for item in candidate.components]
+                    portfolio_rows[variant].append({
+                        "origin": origin,
+                        "horizon": horizon,
+                        "actual": sum(item.weight * float(row["actual"]) for item, row in zip(candidate.components, selected)),
+                        "q50": sum(item.weight * float(row["q50"]) for item, row in zip(candidate.components, selected)),
+                    })
+    scopes: tuple[int | str, ...] = (*config.reported_horizons, "ALL")
+    metrics: list[dict[str, object]] = []
+    for scope in origins:
+        if not eligible[scope]:
+            continue
+        identity = component_index.get(scope)
+        for variant in all_variants:
+            rows = portfolio_rows[variant] if scope == "CANDIDATE_PORTFOLIO" else by_scope_variant[(scope, variant)]
+            for horizon in scopes:
+                selected = _selected_horizon(rows, horizon)
+                actual = np.asarray([row["actual"] for row in selected], dtype=float)
+                q50 = np.asarray([row["q50"] for row in selected], dtype=float)
+                metrics.append({
+                    "variant": variant, "scope": scope,
+                    "symbol": "" if identity is None else identity["symbol"],
+                    "isin": "" if identity is None else identity["isin"],
+                    "horizon": horizon, "origin_count": len({row["origin"] for row in selected}),
+                    "mae_q50": float(np.mean(np.abs(actual - q50))),
+                    "mean_pinball_loss": "" if identity is None else _mean_pinball(selected),
+                    "interval_80_coverage": "" if identity is None else float(np.mean([
+                        row["q10"] <= row["actual"] <= row["q90"] for row in selected
+                    ])),
+                })
+    contributions: list[dict[str, object]] = []
+    for covariate in REQUIRED_V1_COVARIATES:
+        for comparison, without_variant, with_variant in (
+            ("STANDALONE", "TARGET_ONLY", f"TARGET_PLUS_{covariate}"),
+            ("CONDITIONAL", f"FULL_MINUS_{covariate}", "FULL"),
+        ):
+            for scope in origins:
+                loss_metric = "MAE_Q50" if scope == "CANDIDATE_PORTFOLIO" else "PINBALL"
+                for horizon in scopes:
+                    base = {
+                        "covariate": covariate, "comparison": comparison, "scope": scope,
+                        "horizon": horizon, "loss_metric": loss_metric, "origin_count": len(origins[scope]),
+                    }
+                    if not eligible[scope]:
+                        contributions.append({
+                            **base, "loss_without": "", "loss_with": "", "improvement": "",
+                            "ci_low": "", "ci_high": "", "classification": "INSUFFICIENT_HISTORY",
+                        })
+                        continue
+                    without = portfolio_rows[without_variant] if scope == "CANDIDATE_PORTFOLIO" else by_scope_variant[(scope, without_variant)]
+                    with_rows = portfolio_rows[with_variant] if scope == "CANDIDATE_PORTFOLIO" else by_scope_variant[(scope, with_variant)]
+                    without = _selected_horizon(without, horizon)
+                    with_rows = _selected_horizon(with_rows, horizon)
+                    differences = []
+                    for origin in origins[scope]:
+                        left = [row for row in without if row["origin"] == origin]
+                        right = [row for row in with_rows if row["origin"] == origin]
+                        if scope == "CANDIDATE_PORTFOLIO":
+                            loss_left = float(np.mean([abs(row["actual"] - row["q50"]) for row in left]))
+                            loss_right = float(np.mean([abs(row["actual"] - row["q50"]) for row in right]))
+                        else:
+                            loss_left, loss_right = _mean_pinball(left), _mean_pinball(right)
+                        differences.append(loss_left - loss_right)
+                    low, high = moving_block_interval(np.asarray(differences), config)
+                    if scope == "CANDIDATE_PORTFOLIO":
+                        loss_without = float(np.mean([abs(row["actual"] - row["q50"]) for row in without]))
+                        loss_with = float(np.mean([abs(row["actual"] - row["q50"]) for row in with_rows]))
+                    else:
+                        loss_without, loss_with = _mean_pinball(without), _mean_pinball(with_rows)
+                    classification = "NOT_CLASSIFIED"
+                    if comparison == "CONDITIONAL":
+                        classification = "USEFUL" if low > 0 else "HARMFUL" if high < 0 else "INCONCLUSIVE"
+                    contributions.append({
+                        **base, "loss_without": loss_without, "loss_with": loss_with,
+                        "improvement": loss_without - loss_with, "ci_low": low, "ci_high": high,
+                        "classification": classification,
+                    })
+    volatility: list[dict[str, object]] = []
+    for item in series:
+        scope = item["symbol"]
+        if not eligible[scope]:
+            continue
+        month_index = {month.isoformat(): index for index, month in enumerate(item["parsed_months"])}
+        values = {
+            origin: float(np.std(item["array"][month_index[origin] - 11:month_index[origin] + 1], ddof=1) * math.sqrt(12))
+            for origin in origins[scope]
+        }
+        low_threshold, high_threshold = np.quantile(tuple(values.values()), (1 / 3, 2 / 3), method="linear")
+        for row in by_scope_variant[(scope, "FULL")]:
+            realized_volatility = values[str(row["origin"])]
+            error = float(row["actual"] - row["q50"])
+            volatility.append({
+                "origin": row["origin"], "scope": scope, "symbol": item["symbol"], "isin": item["isin"],
+                "horizon": row["horizon"], "origin_count": len(origins[scope]),
+                "trailing_volatility_12m": realized_volatility,
+                "volatility_tercile": "LOW" if realized_volatility <= low_threshold else "MIDDLE" if realized_volatility <= high_threshold else "HIGH",
+                "q10": row["q10"], "q50": row["q50"], "q90": row["q90"],
+                "interval_width": float(row["q90"] - row["q10"]), "actual": row["actual"],
+                "signed_error": error, "absolute_error": abs(error),
+                "interval_hit": "true" if row["q10"] <= row["actual"] <= row["q90"] else "false",
+            })
+    origin_manifest = {
+        scope: {
+            "count": len(values), "first": values[0] if values else None, "last": values[-1] if values else None,
+            "eligible": eligible[scope],
+        }
+        for scope, values in origins.items()
+    }
+    return metrics, contributions, volatility, origin_manifest
+
+
+def _validated_prediction_rows(
+    content: bytes,
+    series: tuple[dict[str, Any], ...],
+) -> list[dict[str, object]]:
+    raw_rows = _read_csv(content, PREDICTION_COLUMNS, "direct evaluation predictions")
+    origins, eligible = _scope_origins(series)
+    variants = (*tuple(name for name, _enabled in evaluation_variants(REQUIRED_V1_COVARIATES)), "ZERO_RETURN_BASELINE")
+    identities = {item["symbol"]: item for item in series}
+    rows: list[dict[str, object]] = []
+    keys = set()
+    for raw in raw_rows:
+        try:
+            item = identities[raw["scope"]]
+            origin = date.fromisoformat(raw["origin"])
+            forecast_month = date.fromisoformat(raw["forecast_month"])
+            horizon = int(raw["horizon"])
+            values = tuple(float(raw[name]) for name in ("actual", "q10", "q50", "q90"))
+            position = item["parsed_months"].index(origin)
+            key = (raw["variant"], raw["scope"], raw["origin"], horizon)
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("direct evaluation prediction row is malformed") from error
+        if (
+            not eligible[raw["scope"]] or raw["variant"] not in variants or raw["origin"] not in origins[raw["scope"]]
+            or (raw["symbol"], raw["isin"]) != (item["symbol"], item["isin"])
+            or horizon not in range(1, 13) or forecast_month != item["parsed_months"][position + horizon]
+            or not all(math.isfinite(value) for value in values) or not values[1] <= values[2] <= values[3]
+            or values[0] != float(item["array"][position + horizon]) or key in keys
+            or (raw["variant"] == "ZERO_RETURN_BASELINE" and values[1:] != (0.0, 0.0, 0.0))
+        ):
+            raise ValueError("direct evaluation prediction row is invalid or duplicate")
+        keys.add(key)
+        rows.append({
+            **raw, "origin": raw["origin"], "horizon": horizon, "actual": values[0],
+            "q10": values[1], "q50": values[2], "q90": values[3],
+        })
+    expected = {
+        (variant, item["symbol"], origin, horizon)
+        for item in series if eligible[item["symbol"]]
+        for variant in variants for origin in origins[item["symbol"]] for horizon in range(1, 13)
+    }
+    if keys != expected:
+        raise ValueError("direct evaluation prediction rows are incomplete")
+    return rows
+
+
+def _read_direct_evaluation(
+    path: Path,
+    output_root: Path,
+    validated: tuple[dict[str, Any], ChronosConfig, DirectPortfolio, tuple[dict[str, Any], ...], MonthlyTable, str] | None = None,
+) -> tuple[dict[str, Any], tuple[dict[str, str], ...]]:
+    output_root = output_root.resolve()
+    path = path.resolve()
+    if not _is_sha256(path.name) or path.parent != (output_root / "evaluations").resolve() or not path.is_dir():
+        raise ValueError("direct evaluation path escapes evaluation root")
+    children = {item.name: item for item in path.iterdir()}
+    if set(children) != _EVALUATION_FILES or any(not item.is_file() or item.resolve().parent != path for item in children.values()):
+        raise ValueError("direct evaluation archive has unexpected files")
+    payloads = {name: children[name].read_bytes() for name in _EVALUATION_FILES}
+    try:
+        manifest = json.loads(payloads["manifest.json"].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("direct evaluation manifest is malformed") from error
+    fields = {
+        "schema_version", "evaluation_id", "request_path", "request_sha256", "model",
+        "config_sha256", "candidate_sha256", "evaluation_origins", "bootstrap", "labels", "generated_sha256",
+    }
+    if not isinstance(manifest, dict) or set(manifest) != fields or manifest.get("schema_version") != _EVALUATION_SCHEMA:
+        raise ValueError("direct evaluation manifest schema is invalid")
+    generated = manifest.get("generated_sha256")
+    if not isinstance(generated, dict) or set(generated) != _EVALUATION_FILES - {"manifest.json"} or any(
+        not _is_sha256(digest) or hashlib.sha256(payloads[name]).hexdigest() != digest
+        for name, digest in generated.items()
+    ):
+        raise ValueError("direct evaluation generated hash mismatch")
+    project_root = output_root.parent.parent.resolve()
+    request_path = _resolved_request_path(project_root, manifest.get("request_path"), "evaluation request")
+    validated = validated or _validated_request(project_root, request_path)
+    request, config, candidate, series, _macro, request_hash = validated
+    if (
+        manifest.get("evaluation_id") != path.name or request["evaluation_id"] != path.name
+        or manifest.get("request_sha256") != request_hash
+        or manifest.get("model") != request["model"]
+        or manifest.get("config_sha256") != request["hashes"]["config_sha256"]
+        or manifest.get("candidate_sha256") != request["hashes"]["candidate_sha256"]
+        or manifest.get("bootstrap") != {"block_months": 6, "resamples": 2000, "seed": 42, "confidence": 0.95}
+        or manifest.get("labels") != {
+            "evaluation": "RETROSPECTIVE_WALK_FORWARD_RESEARCH",
+            "origin_coverage": "SCOPE_SPECIFIC_NOT_LIKE_FOR_LIKE",
+            "usage": "RESEARCH_ONLY",
+        }
+    ):
+        raise ValueError("direct evaluation manifest identity is invalid")
+    predictions = _validated_prediction_rows(payloads["predictions.csv"], series)
+    metrics, contributions, volatility, origin_manifest = _evaluation_derived(predictions, series, candidate, config)
+    expected = {
+        "metrics.csv": _csv_bytes(metrics, EVALUATION_METRIC_COLUMNS),
+        "covariate_contribution.csv": _csv_bytes(contributions, CONTRIBUTION_COLUMNS),
+        "volatility_diagnostics.csv": _csv_bytes(volatility, EVALUATION_VOLATILITY_COLUMNS),
+    }
+    for name, content in expected.items():
+        if payloads[name] != content:
+            raise ValueError(f"direct evaluation {name.removesuffix('.csv')} does not match predictions")
+    if manifest.get("evaluation_origins") != origin_manifest:
+        raise ValueError("direct evaluation origin counts are invalid")
+    return manifest, tuple({name: str(value) for name, value in row.items()} for row in predictions)
+
+
+def read_direct_evaluation(path: Path, output_root: Path) -> tuple[dict[str, Any], tuple[dict[str, str], ...]]:
+    return _read_direct_evaluation(path, output_root)
+
+
+def evaluate_direct_request(
+    project_root: Path,
+    request_path: Path,
+    *,
+    predictor: Callable | None = None,
+    progress: Callable[[float, str], None] | None = None,
+) -> Path:
+    validated = _validated_request(project_root, request_path)
+    request, config, candidate, series, macro, request_hash = validated
+    output_root = _resolved_request_path(project_root.resolve(), request["paths"]["output_root"], "evaluation output")
+    destination = output_root / "evaluations" / request["evaluation_id"]
+    with _publication_lock(output_root):
+        if destination.exists():
+            _read_direct_evaluation(destination, output_root, validated)
+            return destination.resolve()
+    origins, eligible = _scope_origins(series)
+    variants = evaluation_variants(REQUIRED_V1_COVARIATES)
+    work: list[tuple[dict[str, Any], str, int, dict[str, object]]] = []
+    macro_index = {month: index for index, month in enumerate(macro.months)}
+    for variant, enabled in variants:
+        for item in series:
+            if not eligible[item["symbol"]]:
+                continue
+            month_index = {month.isoformat(): index for index, month in enumerate(item["parsed_months"])}
+            for origin in origins[item["symbol"]]:
+                position = month_index[origin]
+                prediction_item: dict[str, object] = {
+                    "target": np.asarray(item["array"][:position + 1], dtype=np.float32).reshape(1, -1),
+                }
+                if enabled:
+                    prediction_item["past_covariates"] = {
+                        name: np.asarray([
+                            macro.values[index, macro_index[month]]
+                            for month in item["parsed_months"][:position + 1]
+                        ], dtype=np.float32)
+                        for index, name in enumerate(REQUIRED_V1_COVARIATES) if name in enabled
+                    }
+                work.append((item, variant, position, prediction_item))
+    predictions: list[dict[str, object]] = []
+    if work:
+        predict = predictor or load_chronos_predictor(config)
+        for start in range(0, len(work), 36):
+            chunk = work[start:start + 36]
+            arrays = _direct_prediction_chunk(predict, [item[3] for item in chunk], config)
+            for (series_item, variant, position, _prediction_item), array in zip(chunk, arrays):
+                for horizon in range(1, 13):
+                    predictions.append({
+                        "variant": variant,
+                        "origin": series_item["parsed_months"][position].isoformat(),
+                        "scope": series_item["symbol"], "symbol": series_item["symbol"], "isin": series_item["isin"],
+                        "forecast_month": series_item["parsed_months"][position + horizon].isoformat(),
+                        "horizon": horizon, "actual": float(series_item["array"][position + horizon]),
+                        "q10": float(array[0, horizon - 1, 0]), "q50": float(array[0, horizon - 1, 1]),
+                        "q90": float(array[0, horizon - 1, 2]),
+                    })
+            if progress is not None:
+                progress(min(start + len(chunk), len(work)) / len(work), "Valutazione variabili Chronos")
+    for item in series:
+        if not eligible[item["symbol"]]:
+            continue
+        month_index = {month.isoformat(): index for index, month in enumerate(item["parsed_months"])}
+        for origin in origins[item["symbol"]]:
+            position = month_index[origin]
+            for horizon in range(1, 13):
+                predictions.append({
+                    "variant": "ZERO_RETURN_BASELINE", "origin": origin,
+                    "scope": item["symbol"], "symbol": item["symbol"], "isin": item["isin"],
+                    "forecast_month": item["parsed_months"][position + horizon].isoformat(),
+                    "horizon": horizon, "actual": float(item["array"][position + horizon]),
+                    "q10": 0.0, "q50": 0.0, "q90": 0.0,
+                })
+    metrics, contributions, volatility, origin_manifest = _evaluation_derived(predictions, series, candidate, config)
+    csv_files = {
+        "predictions.csv": _csv_bytes(predictions, PREDICTION_COLUMNS),
+        "metrics.csv": _csv_bytes(metrics, EVALUATION_METRIC_COLUMNS),
+        "covariate_contribution.csv": _csv_bytes(contributions, CONTRIBUTION_COLUMNS),
+        "volatility_diagnostics.csv": _csv_bytes(volatility, EVALUATION_VOLATILITY_COLUMNS),
+    }
+    manifest = {
+        "schema_version": _EVALUATION_SCHEMA, "evaluation_id": request["evaluation_id"],
+        "request_path": _project_relative(project_root.resolve(), request_path.resolve(), "evaluation request"),
+        "request_sha256": request_hash, "model": request["model"],
+        "config_sha256": request["hashes"]["config_sha256"],
+        "candidate_sha256": request["hashes"]["candidate_sha256"],
+        "evaluation_origins": origin_manifest,
+        "bootstrap": {"block_months": 6, "resamples": 2000, "seed": 42, "confidence": 0.95},
+        "labels": {
+            "evaluation": "RETROSPECTIVE_WALK_FORWARD_RESEARCH",
+            "origin_coverage": "SCOPE_SPECIFIC_NOT_LIKE_FOR_LIKE",
+            "usage": "RESEARCH_ONLY",
+        },
+        "generated_sha256": {name: hashlib.sha256(content).hexdigest() for name, content in csv_files.items()},
+    }
+    files = {**csv_files, "manifest.json": canonical_json(manifest)}
+
+    def inputs_unchanged() -> None:
+        if hashlib.sha256(request_path.read_bytes()).hexdigest() != request_hash:
+            raise ValueError("evaluation request changed during evaluation")
+        _validated_request(project_root, request_path)
+
+    with _publication_lock(output_root):
+        _atomic_snapshot(
+            destination, output_root / ".staging", files, "direct-evaluation", precommit=inputs_unchanged,
+        )
+        _read_direct_evaluation(destination, output_root, validated)
+    return destination.resolve()
