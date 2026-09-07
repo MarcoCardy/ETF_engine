@@ -136,9 +136,6 @@ def _publication_lock(output_root: Path):
             handle = os.fdopen(descriptor, "r+b")
             descriptor = None
             with handle:
-                if handle.read() != b"0":
-                    raise ValueError("publication lock format is invalid")
-                handle.seek(0)
                 while True:
                     try:
                         msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
@@ -146,6 +143,8 @@ def _publication_lock(output_root: Path):
                     except OSError:
                         time.sleep(0.05)
                 try:
+                    if handle.read() != b"0":
+                        raise ValueError("publication lock format is invalid")
                     yield
                 finally:
                     handle.seek(0)

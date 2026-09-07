@@ -6,6 +6,8 @@ import json
 import math
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import types
@@ -1705,6 +1707,40 @@ class ChronosMonitoringTests(unittest.TestCase):
                 )
         self.assertIsNotNone(concurrent_destination)
         self.assertTrue(concurrent_destination.is_dir())
+
+    def test_publication_lock_waits_for_another_process_before_reading_its_byte(self):
+        from perpetual_engine.chronos import _publication_lock
+
+        code = (
+            'import sys\nfrom pathlib import Path\n'
+            'from perpetual_engine.chronos import _publication_lock\n'
+            'with _publication_lock(Path(sys.argv[1])):\n'
+            ' print("locked", flush=True)\n sys.stdin.read(1)\n'
+        )
+        process = subprocess.Popen(
+            [sys.executable, '-c', code, str(self.output_root)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        release = threading.Event()
+
+        def unlock():
+            release.set()
+            process.stdin.write('x')
+            process.stdin.flush()
+
+        timer = threading.Timer(0.2, unlock)
+        try:
+            self.assertEqual(process.stdout.readline().strip(), 'locked')
+            timer.start()
+            with _publication_lock(self.output_root):
+                self.assertTrue(release.is_set())
+            self.assertEqual(process.wait(timeout=5), 0)
+        finally:
+            timer.cancel()
+            if process.poll() is None:
+                process.terminate()
+            process.communicate(timeout=5)
 
     def test_publication_lock_serializes_publishers_for_one_output_root(self):
         from perpetual_engine.chronos import _publication_lock

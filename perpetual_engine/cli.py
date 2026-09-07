@@ -36,6 +36,11 @@ def _parser() -> argparse.ArgumentParser:
     backtest.add_argument("--output", type=Path, required=True)
     chronos = subparsers.add_parser("chronos", help="run the Chronos-2 forecast workflow")
     chronos_commands = chronos.add_subparsers(dest="chronos_command", required=True)
+    worker = chronos_commands.add_parser("dashboard-evaluate-worker")
+    worker.add_argument("--project-root", type=Path, required=True)
+    worker.add_argument("--request", type=Path, required=True)
+    worker.add_argument("--state", type=Path, required=True)
+    worker.add_argument("--lock", type=Path, required=True)
     chronos_refresh = chronos_commands.add_parser("refresh")
     chronos_refresh.add_argument("--config", type=Path, required=True)
     chronos_forecast = chronos_commands.add_parser("forecast")
@@ -91,6 +96,14 @@ def evaluate_command(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.command == "chronos" and args.chronos_command == "dashboard-evaluate-worker":
+        from perpetual_engine.chronos_job import run_evaluation_worker
+
+        try:
+            return run_evaluation_worker(args.project_root, args.request, args.state, args.lock)
+        except (KeyError, OSError, TypeError, ValueError):
+            print("Chronos worker input is invalid. Check local job paths and retry.", file=sys.stderr)
+            return 2
     try:
         if args.command == "evaluate":
             return evaluate_command(args)

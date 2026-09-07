@@ -3,12 +3,31 @@ import subprocess
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
 
 PYTHON = Path(".venv/Scripts/python.exe")
 
 
 class CliTests(TestCase):
+    def test_dashboard_evaluate_worker_passes_exact_paths_and_exit_code(self):
+        from perpetual_engine.cli import main
+
+        arguments = ['root', 'request', 'state', 'lock']
+        with patch('perpetual_engine.chronos_job.run_evaluation_worker', return_value=2) as worker:
+            self.assertEqual(main(['chronos', 'dashboard-evaluate-worker', *sum(([flag, value] for flag, value in zip(
+                ('--project-root', '--request', '--state', '--lock'), arguments,
+            )), [])]), 2)
+        worker.assert_called_once_with(*(Path(value) for value in arguments))
+
+    def test_dashboard_evaluate_worker_invalid_paths_return_two_without_traceback(self):
+        from perpetual_engine.cli import main
+
+        with patch('sys.stderr') as stderr:
+            code = main(['chronos', 'dashboard-evaluate-worker', '--project-root', '.', '--request', '../outside', '--state', 'bad', '--lock', 'bad'])
+        self.assertEqual(code, 2)
+        self.assertNotIn('Traceback', str(stderr.write.call_args_list))
+
     def test_vi_shadow_run_fails_closed_and_writes_outputs(self):
         with tempfile.TemporaryDirectory() as directory:
             completed = subprocess.run(
