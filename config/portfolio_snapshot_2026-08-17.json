@@ -1,0 +1,22 @@
+{
+  "schema_version": "PORTFOLIO_SNAPSHOT_V1",
+  "snapshot_date": "2026-08-17",
+  "total_eur": 617320.80,
+  "cash_eur": 1950.90,
+  "securities_eur": 615369.90,
+  "positions": [
+    {"id": "SWDA", "value_eur": 143919.36, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "IWRD", "value_eur": 76833.10, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "IWVL", "value_eur": 41895.90, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "CINA", "value_eur": 5173.00, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "AIAI", "value_eur": 17982.50, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "LWLD", "value_eur": 35299.18, "asset_class": "EQUITY", "exposure_multiplier": 2.0},
+    {"id": "EQQQ", "value_eur": 70556.04, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "EST", "value_eur": 23647.50, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "SXLK", "value_eur": 62114.52, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "RBOT", "value_eur": 9580.00, "asset_class": "EQUITY", "exposure_multiplier": 1.0},
+    {"id": "BTP-1NV29 5.25%", "value_eur": 25569.60, "asset_class": "BOND", "exposure_multiplier": 0.0},
+    {"id": "BTP-1ST28 4.75%", "value_eur": 88000.50, "asset_class": "BOND", "exposure_multiplier": 0.0},
+    {"id": "IHYG", "value_eur": 14798.70, "asset_class": "CREDIT", "exposure_multiplier": 0.0}
+  ]
+}

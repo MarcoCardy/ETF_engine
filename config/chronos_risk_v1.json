@@ -1,0 +1,21 @@
+{
+  "schema_version": "CHRONOS_RISK_CONFIG_V1",
+  "mode": "SHADOW",
+  "model_id": "amazon/chronos-2",
+  "model_revision": "29ec3766d36d6f73f0696f85560a422f50e8498c",
+  "device": "cpu",
+  "context_length": 512,
+  "horizons": [5, 10, 20],
+  "quantiles": [0.10, 0.25, 0.50, 0.75, 0.90],
+  "volatility_windows": [20, 60],
+  "ewma_lambda": 0.94,
+  "sigma_forecast_weights": [0.35, 0.65],
+  "sigma_risk_weights": [0.25, 0.35, 0.40],
+  "chronos_volatility_modes": ["Q50", "Q90"],
+  "beta_volatility_target": 0.18,
+  "beta_cap": 1.60,
+  "risk_regime_thresholds": [0.15, 0.22, 0.30],
+  "price_config": "config/portfolio_p_v1.json",
+  "portfolio_snapshot": "config/portfolio_snapshot_2026-08-17.json",
+  "output_root": "outputs/chronos_risk_v1"
+}
