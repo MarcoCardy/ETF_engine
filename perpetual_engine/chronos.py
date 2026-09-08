@@ -337,6 +337,22 @@ def moving_block_interval(origin_differences: np.ndarray, config: ChronosConfig)
     return tuple(float(item) for item in np.quantile(means, (tail, 1.0 - tail)))
 
 
+def moving_block_p_value(origin_differences: np.ndarray, config: ChronosConfig) -> float:
+    values = np.asarray(origin_differences, dtype=float)
+    block = config.bootstrap_block_months
+    if values.ndim != 1 or len(values) < block or not np.isfinite(values).all():
+        raise ValueError("bootstrap requires finite per-origin differences and one full block")
+    observed = float(values.mean())
+    centered = values - observed
+    rng = np.random.default_rng(config.bootstrap_seed)
+    starts = np.arange(len(values) - block + 1)
+    blocks_needed = math.ceil(len(values) / block)
+    chosen = rng.choice(starts, size=(config.bootstrap_resamples, blocks_needed), replace=True)
+    indices = (chosen[:, :, None] + np.arange(block)).reshape(config.bootstrap_resamples, -1)[:, :len(values)]
+    exceedances = int(np.count_nonzero(centered[indices].mean(axis=1) >= observed))
+    return float((exceedances + 1) / (config.bootstrap_resamples + 1))
+
+
 def evaluation_variants(covariates: tuple[str, ...]) -> tuple[tuple[str, tuple[str, ...]], ...]:
     if not covariates or len(set(covariates)) != len(covariates):
         raise ValueError("evaluation covariates must be non-empty and unique")

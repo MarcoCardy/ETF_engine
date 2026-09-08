@@ -847,6 +847,15 @@ class DirectEvaluationTests(DirectChronosFixture):
         )
         metrics = self.csv_rows(output / "metrics.csv")
         self.assertEqual({row["origin_count"] for row in metrics}, {"36"})
+        significance = self.csv_rows(output / "monthly_significance.csv")
+        self.assertEqual({row["scope"] for row in significance}, {"CANDIDATE_PORTFOLIO"})
+        self.assertEqual({row["comparison"] for row in significance}, {"CONDITIONAL"})
+        grouped = {}
+        for row in significance:
+            grouped.setdefault((row["covariate"], row["horizon"]), []).append(row)
+        self.assertTrue(all([int(row["origin_count"]) for row in rows] == list(range(1, 37)) for rows in grouped.values()))
+        self.assertTrue(all(row["p_value"] == "" for rows in grouped.values() for row in rows[:5]))
+        self.assertTrue(all(row["p_value"] != "" for rows in grouped.values() for row in rows[5:]))
 
     def test_request_binds_only_candidate_series_and_worker_revalidates_before_model_load(self):
         self.refresh_counts()
@@ -886,7 +895,8 @@ class DirectEvaluationTests(DirectChronosFixture):
             )
         loader.assert_called_once()
         self.assertEqual({path.name for path in first.iterdir()}, {
-            "predictions.csv", "metrics.csv", "covariate_contribution.csv", "volatility_diagnostics.csv", "manifest.json",
+            "predictions.csv", "metrics.csv", "covariate_contribution.csv", "volatility_diagnostics.csv",
+            "monthly_significance.csv", "manifest.json",
         })
         before = {path.name: path.read_bytes() for path in first.iterdir()}
         repeated = self.evaluate(request, Mock(side_effect=AssertionError("archive must be reused")))

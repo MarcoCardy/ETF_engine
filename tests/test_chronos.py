@@ -988,7 +988,7 @@ class ChronosEvaluationTests(unittest.TestCase):
         }))
 
     def test_metric_variant_and_paired_bootstrap_contracts(self):
-        from perpetual_engine.chronos import evaluation_variants, moving_block_interval, pinball_loss
+        from perpetual_engine.chronos import evaluation_variants, moving_block_interval, moving_block_p_value, pinball_loss
 
         np.testing.assert_allclose(
             pinball_loss(np.array([1.0, -1.0]), np.array([0.0, 0.0]), 0.1),
@@ -1008,6 +1008,8 @@ class ChronosEvaluationTests(unittest.TestCase):
         self.assertLess(crossing[0], 0.0)
         self.assertGreater(crossing[1], 0.0)
         self.assertEqual(crossing, moving_block_interval(np.r_[-np.ones(18), np.ones(18)], self.config))
+        self.assertLess(moving_block_p_value(np.ones(36), self.config), 0.01)
+        self.assertGreater(moving_block_p_value(-np.ones(36), self.config), 0.99)
 
     def test_walk_forward_batches_outputs_metrics_contributions_and_volatility(self):
         destination = self._evaluate()
