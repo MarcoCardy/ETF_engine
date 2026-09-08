@@ -90,6 +90,22 @@ def economic_series_catalog(project_root: Path) -> tuple[dict[str, object], ...]
         root / "data" / "chronos_v1" / "current_manifest.json", "id"
     )
     factor_path = root / "outputs" / "four_sleeve_v1" / "monthly_returns.csv"
+    frozen_rows = _frozen_rows(root)
+    chronos_latest = None
+    chronos_id = chronos_manifest.get("vintage_id")
+    if isinstance(chronos_id, str):
+        table_path = root / "data" / "chronos_v1" / "vintages" / chronos_id / "covariates.csv"
+        try:
+            with table_path.open(encoding="utf-8", newline="") as handle:
+                chronos_latest = list(csv.DictReader(handle))[-1]["month"]
+        except (IndexError, KeyError, OSError):
+            pass
+    factor_latest = None
+    try:
+        with factor_path.open(encoding="utf-8", newline="") as handle:
+            factor_latest = list(csv.DictReader(handle))[-1]["month"]
+    except (IndexError, KeyError, OSError):
+        pass
     output: list[dict[str, object]] = []
     for item in SERIES:
         configured: dict[str, object] | None
@@ -112,6 +128,17 @@ def economic_series_catalog(project_root: Path) -> tuple[dict[str, object], ...]
             status = "MISSING_VINTAGE"
         else:
             status = str(saved.get("vintage_status", "AVAILABLE"))
+        latest_observation = None
+        latest_available_at = None
+        source_rows = frozen_rows.get(item.source)
+        if source_rows:
+            latest = max(source_rows, key=lambda row: (row.observation_date, row.available_at))
+            latest_observation = latest.observation_date.isoformat()
+            latest_available_at = latest.available_at.isoformat()
+        elif item.store == "chronos":
+            latest_observation = chronos_latest
+        elif item.store == "derived":
+            latest_observation = factor_latest
         output.append({
             "series": item.series,
             "source": item.source,
@@ -121,6 +148,8 @@ def economic_series_catalog(project_root: Path) -> tuple[dict[str, object], ...]
             "url": None if configured is None else configured.get("url"),
             "vintage_id": manifest.get("vintage_id"),
             "retrieved_at": manifest.get("retrieved_at"),
+            "latest_observation": latest_observation,
+            "latest_available_at": latest_available_at,
             "limitation": (
                 "CURRENT_OR_REVISED_HISTORY_NOT_TRUE_VINTAGE"
                 if item.store in {"frozen", "chronos"} else

@@ -210,6 +210,11 @@ class DashboardAppTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertIn("modalità shadow", app.info[0].value)
         self.assertIn("non genera ordini", app.info[0].value)
+        self.assertEqual(app.button(key="refresh_economic_data").label, "Aggiorna dati economici")
+        self.assertEqual(app.button(key="calculate_chronos_report").label, "Genera report completo")
+        self.assertEqual(app.button(key="start_ablation_evaluation").label, "Avvia valutazione ablation")
+        series = set(app.dataframe[0].value["series"])
+        self.assertTrue({"VIX", "US_TREASURY_10Y_REAL", "US_10Y_BREAKEVEN", "DAMODARAN_ERP", "US_CPI"} <= series)
 
     def test_comparison_report_is_scoped_to_selection_and_shows_full_summary(self) -> None:
         output = self.comparison_report()
