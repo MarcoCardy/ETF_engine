@@ -107,6 +107,32 @@
       "availability": "treasury_next_business_day"
     },
     {
+      "source_id": "FRED_T10YIE",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=T10YIE",
+      "parser_kind": "fred_csv",
+      "parser_version": "1",
+      "status": "validation-only",
+      "normalized_path": "rates_t10yie.csv",
+      "series_id": "T10YIE",
+      "unit": "annual_decimal",
+      "source_scale": "percent",
+      "frequency": "daily",
+      "availability": "observation_end"
+    },
+    {
+      "source_id": "FRED_VIXCLS",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS",
+      "parser_kind": "fred_csv",
+      "parser_version": "1",
+      "status": "validation-only",
+      "normalized_path": "risk_vix.csv",
+      "series_id": "VIXCLS",
+      "unit": "index",
+      "source_scale": "raw",
+      "frequency": "daily",
+      "availability": "observation_end"
+    },
+    {
       "source_id": "FRED_DFF",
       "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF",
       "parser_kind": "fred_csv",
