@@ -8,7 +8,7 @@ import csv
 import io
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -68,6 +68,8 @@ class RiskConfig:
     chronos_volatility_modes: tuple[str, ...]
     beta_volatility_target: float
     beta_cap: float
+    trend_windows: tuple[int, int]
+    structural_volatility_window: int
     risk_regime_thresholds: tuple[float, float, float]
     price_config: Path
     portfolio_snapshot: Path
@@ -85,7 +87,8 @@ def load_risk_config(path: Path) -> RiskConfig:
         "schema_version", "mode", "model_id", "model_revision", "device", "context_length",
         "horizons", "quantiles", "volatility_windows", "ewma_lambda", "sigma_forecast_weights",
         "sigma_risk_weights", "chronos_volatility_modes", "beta_volatility_target", "beta_cap",
-        "risk_regime_thresholds", "price_config", "portfolio_snapshot", "output_root",
+        "trend_windows", "structural_volatility_window", "risk_regime_thresholds",
+        "price_config", "portfolio_snapshot", "output_root",
     }
     if not isinstance(data, dict) or set(data) != expected or data["schema_version"] != "CHRONOS_RISK_CONFIG_V1":
         raise ValueError("Chronos risk configuration schema is invalid")
@@ -96,6 +99,7 @@ def load_risk_config(path: Path) -> RiskConfig:
     windows = tuple(data["volatility_windows"])
     forecast_weights = tuple(float(value) for value in data["sigma_forecast_weights"])
     risk_weights = tuple(float(value) for value in data["sigma_risk_weights"])
+    trend_windows = tuple(data["trend_windows"])
     regimes = tuple(float(value) for value in data["risk_regime_thresholds"])
     if horizons != (5, 10, 20) or quantiles != (0.1, 0.25, 0.5, 0.75, 0.9) or windows != (20, 60):
         raise ValueError("Chronos risk horizons, quantiles or windows are invalid")
@@ -105,6 +109,8 @@ def load_risk_config(path: Path) -> RiskConfig:
         raise ValueError("Chronos risk volatility settings are invalid")
     if sorted(regimes) != list(regimes) or len(regimes) != 3 or any(value <= 0 for value in regimes):
         raise ValueError("Chronos risk regime thresholds are invalid")
+    if trend_windows != (50, 200) or data["structural_volatility_window"] != 756:
+        raise ValueError("Chronos risk trend or structural-volatility windows are invalid")
     resolved = []
     for name in ("price_config", "portfolio_snapshot", "output_root"):
         raw = data[name]
@@ -116,7 +122,8 @@ def load_risk_config(path: Path) -> RiskConfig:
         path, project_root, data["mode"], data["model_id"], data["model_revision"], data["device"],
         int(data["context_length"]), horizons, quantiles, windows, float(data["ewma_lambda"]),
         forecast_weights, risk_weights, tuple(data["chronos_volatility_modes"]),
-        float(data["beta_volatility_target"]), float(data["beta_cap"]), regimes, *resolved,
+        float(data["beta_volatility_target"]), float(data["beta_cap"]), trend_windows,
+        data["structural_volatility_window"], regimes, *resolved,
     )
 
 
@@ -451,7 +458,7 @@ def build_current_risk_report(
         raise ValueError("forecast timestamp must be UTC")
     sigma20 = historical_volatility(values, 20)
     sigma60 = historical_volatility(values, 60)
-    baseline = sigma_forecast(sigma20, sigma60)
+    baseline = sigma_forecast(sigma20, sigma60, config.sigma_forecast_weights)
     forecasts = forecast_market_risk(config, values, covariates=covariates, predictor=predictor)
     labels = tuple(f"Q{int(round(level * 100)):02d}" for level in config.quantiles)
     forecast_payload = {
@@ -558,6 +565,7 @@ def publish_current_risk_report(
     *,
     predictor: Callable | None = None,
     issued_at: datetime | None = None,
+    economic_inputs=None,
 ) -> Path:
     from perpetual_engine.portfolio_monitor import load_current_portfolio_prices
 
@@ -574,14 +582,56 @@ def publish_current_risk_report(
     series = prices[market.ticker]
     ordered = sorted(series)
     returns = daily_returns([series[day] for day in ordered])
+    from perpetual_engine.economic_report import load_risk_covariates
+
+    economic = economic_inputs or load_risk_covariates(
+        config.project_root, np.asarray(ordered[1:], dtype="datetime64[D]")
+    )
+    covariates = {
+        name: np.asarray(values, dtype=float)
+        for name, values in economic.covariates.items()
+        if len(values) == len(returns) and np.isfinite(values).all()
+    }
     report = build_current_risk_report(
         config,
         np.asarray(ordered[1:], dtype="datetime64[D]"),
         returns,
         dataset_version=str(manifest["vintage_id"]),
         predictor=predictor,
+        covariates=covariates,
         issued_at=issued_at,
     )
+    report["economic_series"] = list(economic.catalog)
+    report["economic_warnings"] = list(economic.warnings)
+    report["covariate_status"] = {
+        name: "USED" if name in covariates else "EXCLUDED_MISSING_OR_UNALIGNED"
+        for name in economic.covariates
+    }
+    if economic.erp is not None:
+        try:
+            comparison = current_beta_comparison(
+                config,
+                [series[day] for day in ordered],
+                returns,
+                erp=economic.erp,
+                sigma_forecast_value=report["baselines"]["sigma_forecast"],
+                chronos_vol_q90=report["chronos_vol_conservative"],
+            )
+            report["portfolio_comparison"] = {"status": "AVAILABLE_SHADOW", **asdict(comparison)}
+        except ValueError as error:
+            report["portfolio_comparison"] = {"status": "UNAVAILABLE", "reason": str(error)}
+    try:
+        weights = {component.ticker: float(component.weight) for component in portfolio.components}
+        utility = portfolio_risk_utility(fixed_weight_portfolio_returns(prices, weights))
+        report["portfolio_utility"] = {
+            "saved_portfolio_historical": _json_safe(utility),
+            **{
+                name: {"status": "UNAVAILABLE_REQUIRES_WALK_FORWARD_EXPOSURE_PATH"}
+                for name in ("M0", "M1", "M2", "M3")
+            },
+        }
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        report["portfolio_utility"] = {"status": "UNAVAILABLE", "reason": str(error)}
     report["config_sha256"] = hashlib.sha256(config.path.read_bytes()).hexdigest()
     report["price_manifest_retrieved_at"] = manifest["retrieved_at"]
     payload = canonical_json(report)
@@ -705,8 +755,10 @@ def ewma_volatility(returns: Sequence[float], decay: float = 0.94) -> float:
     return math.sqrt(variance * TRADING_DAYS)
 
 
-def sigma_forecast(sigma20: float, sigma60: float) -> float:
-    return _weighted_volatility((sigma20, sigma60), (0.35, 0.65), "sigma forecast")
+def sigma_forecast(
+    sigma20: float, sigma60: float, weights: Sequence[float] = (0.35, 0.65)
+) -> float:
+    return _weighted_volatility((sigma20, sigma60), weights, "sigma forecast")
 
 
 def sigma_risk(sigma20: float, sigma60: float, chronos_vol: float, weights: Sequence[float]) -> float:
@@ -766,16 +818,20 @@ def beta_comparison(
     chronos_vol_q90: float,
     trend_fast_positive: bool,
     trend_slow_positive: bool,
+    volatility_target: float = 0.18,
+    beta_cap: float = 1.60,
 ) -> BetaComparison:
     values = _finite((erp, sigma_forecast_value, structural_volatility, chronos_vol_q90), "beta inputs")
-    if erp < 0 or np.any(values[1:] <= 0):
+    if erp < 0 or np.any(values[1:] <= 0) or not math.isfinite(volatility_target) or volatility_target <= 0:
         raise ValueError("beta inputs are outside their valid range")
+    if not math.isfinite(beta_cap) or beta_cap <= 0:
+        raise ValueError("beta cap is outside its valid range")
     desired = beta_desired(erp)
     trend = beta_trend(trend_fast_positive, trend_slow_positive)
     sigma_kelly = max(sigma_forecast_value, structural_volatility)
     half_kelly = erp / sigma_kelly**2 / 2.0
-    beta_vol_production = min(1.60, 0.18 / sigma_forecast_value)
-    beta_vol_chronos = min(1.60, 0.18 / max(sigma_forecast_value, chronos_vol_q90))
+    beta_vol_production = min(beta_cap, volatility_target / sigma_forecast_value)
+    beta_vol_chronos = min(beta_cap, volatility_target / max(sigma_forecast_value, chronos_vol_q90))
     ceiling_production = min(half_kelly, beta_vol_production, trend)
     ceiling_chronos = min(half_kelly, beta_vol_chronos, trend)
     operational_production = min(desired, ceiling_production)
@@ -790,6 +846,49 @@ def beta_comparison(
         desired, sigma_kelly, half_kelly, trend, beta_vol_production, beta_vol_chronos,
         ceiling_production, ceiling_chronos, operational_production, operational_chronos, impact,
     )
+
+
+def current_beta_comparison(
+    config: RiskConfig,
+    prices: Sequence[float],
+    returns: Sequence[float],
+    *,
+    erp: float,
+    sigma_forecast_value: float,
+    chronos_vol_q90: float,
+) -> BetaComparison:
+    levels = _finite(prices, "trend prices")
+    values = _finite(returns, "structural returns")
+    fast, slow = config.trend_windows
+    if len(levels) < slow or len(values) < config.structural_volatility_window:
+        raise ValueError("insufficient history for beta comparison")
+    return beta_comparison(
+        erp=erp,
+        sigma_forecast_value=sigma_forecast_value,
+        structural_volatility=historical_volatility(values, config.structural_volatility_window),
+        chronos_vol_q90=chronos_vol_q90,
+        trend_fast_positive=bool(levels[-1] > float(np.mean(levels[-fast:]))),
+        trend_slow_positive=bool(levels[-1] > float(np.mean(levels[-slow:]))),
+        volatility_target=config.beta_volatility_target,
+        beta_cap=config.beta_cap,
+    )
+
+
+def fixed_weight_portfolio_returns(
+    prices: Mapping[str, Mapping[date, float]], weights: Mapping[str, float]
+) -> np.ndarray:
+    if not weights or set(weights) - set(prices) or any(not math.isfinite(value) or value < 0 for value in weights.values()):
+        raise ValueError("portfolio prices or weights are invalid")
+    if not math.isclose(sum(weights.values()), 1.0, abs_tol=1e-9):
+        raise ValueError("portfolio weights must sum to one")
+    common = sorted(set.intersection(*(set(prices[name]) for name in weights)))
+    if len(common) < 2:
+        raise ValueError("portfolio has insufficient common price history")
+    output = np.zeros(len(common) - 1)
+    for name, weight in weights.items():
+        output += weight * daily_returns([prices[name][day] for day in common])
+    output.setflags(write=False)
+    return output
 
 
 @dataclass(frozen=True)
