@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import nullcontext
@@ -104,6 +106,31 @@ class DashboardAppTests(unittest.TestCase):
             app.sidebar.radio(key="section").options,
             ["Portafoglio", "ETF", "Confronti", "Previsioni Chronos"],
         )
+
+    def test_streamlit_entrypoint_does_not_shadow_installed_chronos_package(self) -> None:
+        code = f"""
+import importlib.util
+import runpy
+from pathlib import Path
+from streamlit.web.bootstrap import _fix_sys_path
+
+dashboard = Path({str(self.app_path)!r})
+_fix_sys_path(str(dashboard))
+runpy.run_path(str(dashboard), run_name="__main__")
+origin = Path(importlib.util.find_spec("chronos").origin).resolve()
+raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=self.app_path.parents[1],
+            env=os.environ | {"ETF_DASHBOARD_ROOT": str(self.root)},
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_portfolio_section_has_save_and_reset_controls(self) -> None:
         app = self.run_app("Portafoglio")

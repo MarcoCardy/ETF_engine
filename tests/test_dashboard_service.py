@@ -231,6 +231,38 @@ class RuntimeConfigTests(DashboardServiceFixture):
 
 
 class DiscoveryAndCatalogTests(DashboardServiceFixture):
+    def test_search_uses_borsa_italiana_when_yahoo_omits_isin(self):
+        from perpetual_engine.dashboard_service import search_etfs
+
+        class FakeTicker:
+            def get_history_metadata(self):
+                return {"currency": "EUR", "exchangeName": "MIL"}
+
+            def get_isin(self):
+                return "-"
+
+        found = search_etfs(
+            "EQQQ.MI",
+            search_factory=lambda value, **kwargs: SimpleNamespace(quotes=[{
+                "symbol": "EQQQ.MI",
+                "quoteType": "ETF",
+                "longname": "Invesco EQQQ NASDAQ-100 UCITS ETF",
+            }]),
+            ticker_factory=lambda symbol: FakeTicker(),
+            official_search=lambda query: {
+                "quotes": [{
+                    "title": "Invesco Eqqq Nasdaq-100 Ucits Etf",
+                    "symbol": "IE0032077012",
+                    "mic": "ETFP",
+                    "typeLabel": "ETF",
+                    "link": "https://www.borsaitaliana.it/borsa/search/scheda.html?code=IE0032077012&mic=ETFP&lang=it",
+                }],
+            },
+        )
+
+        self.assertEqual(found[0].isin, "IE0032077012")
+        self.assertIn("borsaitaliana.it", found[0].identity_source_url)
+
     def test_search_accepts_symbol_or_isin_and_keeps_only_verified_eur_etfs(self):
         from perpetual_engine.dashboard_service import search_etfs
 

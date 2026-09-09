@@ -3,8 +3,12 @@ from __future__ import annotations
 import csv
 import json
 import os
+import sys
 from dataclasses import replace
 from pathlib import Path
+
+if sys.path and Path(sys.path[0]).resolve() == Path(__file__).resolve().parent:
+    sys.path.pop(0)
 
 import pandas as pd
 import streamlit as st

@@ -8,6 +8,7 @@ import math
 import os
 import re
 import tempfile
+import urllib.request
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -35,6 +36,7 @@ _STATE_SCHEMA = "ETF_DASHBOARD_STATE_V1"
 _COMPONENT_KEYS = {"id", "ticker", "isin", "quote_currency", "weight"}
 _CATALOG_KEYS = {"id", "name", "ticker", "isin", "exchange", "quote_currency", "identity_source_url"}
 _ISIN_SHAPE_RE = re.compile(r"[A-Z]{2}[A-Z0-9]{10}")
+_BORSA_MIC_BY_SUFFIX = {".MI": "ETFP", ".PA": "XPAR"}
 
 
 @dataclass(frozen=True)
@@ -110,20 +112,58 @@ class DashboardReport:
     comparison: HistoricalComparison
 
 
+def _search_borsa_italiana(query: str) -> Any:
+    url = f"https://www.borsaitaliana.it/borsa/searchengine/all/json/search.html?lang=it&q={quote(query)}"
+    with urllib.request.urlopen(url, timeout=10) as response:
+        return json.load(response)
+
+
+def _borsa_identity(
+    ticker: str,
+    name: str,
+    official_search: Callable[[str], Any],
+) -> tuple[str, str] | None:
+    mic = next((value for suffix, value in _BORSA_MIC_BY_SUFFIX.items() if ticker.endswith(suffix)), None)
+    if mic is None:
+        return None
+    payload = official_search(ticker.rsplit(".", 1)[0])
+    quotes = payload.get("quotes", ()) if isinstance(payload, dict) else ()
+    matches = {
+        (item.get("symbol"), item.get("link"))
+        for item in quotes
+        if isinstance(item, dict)
+        and item.get("typeLabel") == "ETF"
+        and item.get("mic") == mic
+        and isinstance(item.get("title"), str)
+        and " ".join(item["title"].casefold().split()) == " ".join(name.casefold().split())
+        and valid_isin(item.get("symbol"))
+        and isinstance(item.get("link"), str)
+        and item["link"].startswith("https://www.borsaitaliana.it/")
+    }
+    isins = {isin for isin, _link in matches}
+    if len(isins) != 1:
+        return None
+    return sorted(matches)[0]
+
+
 def search_etfs(
     query: str,
     *,
     search_factory: Callable[..., Any] | None = None,
     ticker_factory: Callable[[str], Any] | None = None,
+    official_search: Callable[[str], Any] | None = None,
 ) -> tuple[EtfCandidate, ...]:
     query = query.strip() if isinstance(query, str) else ""
     if not query:
         raise ValueError("ETF query is required")
+    using_default_sources = search_factory is None and ticker_factory is None
     if search_factory is None or ticker_factory is None:
         import yfinance as yf
 
         search_factory = search_factory or yf.Search
         ticker_factory = ticker_factory or yf.Ticker
+    if official_search is None and using_default_sources:
+        official_search = _search_borsa_italiana
     try:
         quotes = getattr(
             search_factory(query, max_results=8, news_count=0, lists_count=0, include_cb=False),
@@ -145,18 +185,29 @@ def search_etfs(
         if not isinstance(ticker, str) or _TICKER_RE.fullmatch(ticker) is None or ticker in seen_tickers:
             continue
         seen_tickers.add(ticker)
+        name = raw_quote.get("longname") or raw_quote.get("shortname")
+        if not isinstance(name, str) or not name.strip() or len(name) > 100:
+            continue
+        name = name.strip()
+        identity_source_url = f"https://finance.yahoo.com/quote/{quote(ticker, safe='.^=-')}"
         try:
             instrument = ticker_factory(ticker)
             metadata = instrument.get_history_metadata()
             isin = instrument.get_isin()
         except Exception:
             continue
-        if not isinstance(metadata, dict) or metadata.get("currency") != "EUR" or not valid_isin(isin):
+        if not isinstance(metadata, dict) or metadata.get("currency") != "EUR":
+            continue
+        if not valid_isin(isin) and official_search is not None:
+            try:
+                official_identity = _borsa_identity(ticker, name, official_search)
+            except Exception:
+                official_identity = None
+            if official_identity is not None:
+                isin, identity_source_url = official_identity
+        if not valid_isin(isin):
             continue
         if isin_query and isin != query:
-            continue
-        name = raw_quote.get("longname") or raw_quote.get("shortname")
-        if not isinstance(name, str) or not name.strip() or len(name) > 100:
             continue
         exchange = metadata.get("exchangeName")
         if not isinstance(exchange, str) or not exchange.strip():
@@ -164,8 +215,7 @@ def search_etfs(
         exchange = exchange.strip()
         found.append(
             EtfCandidate(
-                name.strip(), ticker, isin, exchange, "EUR",
-                f"https://finance.yahoo.com/quote/{quote(ticker, safe='.^=-')}",
+                name, ticker, isin, exchange, "EUR", identity_source_url,
             )
         )
     if not found:
