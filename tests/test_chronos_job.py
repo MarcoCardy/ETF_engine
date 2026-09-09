@@ -71,6 +71,18 @@ class EvaluationJobTests(TestCase):
         self.assertEqual(jobs[0].job_id, jobs[1].job_id)
         self.assertEqual(self.launcher.call_count, 1)
 
+    def test_safe_path_accepts_equivalent_windows_extended_path(self):
+        candidate = self.paths.chronos_job.parent / 'chronos_jobs'
+        original_resolve = Path.resolve
+
+        def extended_resolve(path, strict=False):
+            if path == candidate:
+                return Path('\\\\?\\' + str(path))
+            return original_resolve(path, strict=strict)
+
+        with patch.object(Path, 'resolve', extended_resolve):
+            self.assertEqual(chronos_job._safe_path(self.root, candidate), candidate)
+
     def test_evaluation_job_grace_expiry_dead_running_and_retry_identity(self):
         first = self.start()
         self.assertEqual(chronos_job.read_evaluation_job(self.paths, now=first.started_at + timedelta(seconds=29)).state, 'STARTING')

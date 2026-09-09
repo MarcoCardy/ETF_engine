@@ -6,7 +6,6 @@ import os
 import hashlib
 import csv
 import io
-import shutil
 import tempfile
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time, timezone
@@ -17,7 +16,7 @@ from typing import Callable, Mapping, Sequence
 import numpy as np
 
 from perpetual_engine.point_in_time import ObservationRow, asof_select
-from perpetual_engine.io import canonical_json
+from perpetual_engine.io import canonical_json, remove_tree
 
 
 TRADING_DAYS = 252
@@ -735,7 +734,7 @@ def _publish_archive(destination: Path, files: Mapping[str, bytes]) -> Path:
         return destination
     finally:
         if stage.exists():
-            shutil.rmtree(stage)
+            remove_tree(stage)
 
 
 def historical_volatility(returns: Sequence[float], window: int) -> float:

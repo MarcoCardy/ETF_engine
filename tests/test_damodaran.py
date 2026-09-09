@@ -63,6 +63,34 @@ def write_monthly_xlsx(
 
 
 class DamodaranParserTests(TestCase):
+    def test_annual_skips_years_with_no_published_erp(self):
+        def cell(value: object) -> SimpleNamespace:
+            return SimpleNamespace(value=value, xf_index=None)
+
+        class AnnualSheet:
+            def __init__(self):
+                self.rows = ((cell("Year"), cell("Implied ERP (FCFE)")), (cell(1960), cell(None))) + tuple(
+                    (cell(year), cell(4.5)) for year in range(1961, 2008)
+                )
+                self.nrows = len(self.rows)
+
+            def row(self, index):
+                return self.rows[index]
+
+            def cell_value(self, row_index, column_index):
+                return self.rows[row_index][column_index].value
+
+            def cell(self, row_index, column_index):
+                return self.rows[row_index][column_index]
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "histimpl.xls"
+            write_annual_xls(path)
+            with patch("perpetual_engine.data_sources.xlrd.open_workbook", return_value=SimpleNamespace(sheets=lambda: (AnnualSheet(),))):
+                rows = parse_damodaran_annual(path, artifact(path, ANNUAL_URL, utc("2008-03-01T00:00:00Z")))
+
+        self.assertEqual(rows[0].observation_date, date(1961, 12, 31))
+
     def test_annual_2007_first_affects_march_2008(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "histimpl.xls"
@@ -88,6 +116,15 @@ class DamodaranParserTests(TestCase):
         self.assertEqual(rows[0].available_at, utc("2008-09-02T23:59:59Z"))
         self.assertIsNone(damodaran_erp_asof((), rows, utc("2008-08-31T23:59:59Z")))
         self.assertEqual(damodaran_erp_asof((), rows, utc("2008-09-30T23:59:59Z")), rows[0])
+
+    def test_monthly_accepts_damodaran_literal_date_and_percent_cells(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ERPbymonth.xlsx"
+            write_monthly_xlsx(path, rows=(("1-Sep-08", "4.50%"), ("1-Oct-08", "4.60%")))
+            rows = parse_damodaran_monthly(path, artifact(path, MONTHLY_URL, utc("2008-11-01T00:00:00Z")))
+
+        self.assertEqual(rows[0].observation_date, date(2008, 9, 1))
+        self.assertEqual(rows[0].value, Decimal("0.045"))
 
     def test_monthly_preferred_after_september_switch_and_annual_is_used_before_release(self):
         with tempfile.TemporaryDirectory() as directory:

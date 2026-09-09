@@ -1,9 +1,11 @@
 import json
+import os
+import stat
 import tempfile
 from pathlib import Path
 from unittest import TestCase
 
-from perpetual_engine.io import load_config, load_snapshot, normalized_json, sha256_file
+from perpetual_engine.io import load_config, load_snapshot, normalized_json, remove_tree, sha256_file
 from perpetual_engine.models import money
 from tests.helpers import sample_result
 
@@ -59,3 +61,13 @@ class IoTests(TestCase):
         digest = sha256_file(Path("config/policy_v1.json"))
         self.assertEqual(len(digest), 64)
         int(digest, 16)
+
+    def test_remove_tree_clears_windows_readonly_attribute(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "readonly"
+            path.mkdir()
+            os.chmod(path, stat.S_IREAD)
+
+            remove_tree(path)
+
+            self.assertFalse(path.exists())

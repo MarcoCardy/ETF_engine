@@ -7,7 +7,6 @@ import json
 import math
 import msvcrt
 import os
-import shutil
 import stat
 import tempfile
 import threading
@@ -31,7 +30,7 @@ from perpetual_engine.chronos_data import (
     load_target_snapshot,
     load_target_table,
 )
-from perpetual_engine.io import canonical_json, sha256_file
+from perpetual_engine.io import canonical_json, remove_tree, sha256_file
 
 
 SCENARIO_NAMES = ("ECB_FLAT", "ECB_DOWN_100BP", "ECB_UP_100BP")
@@ -458,13 +457,13 @@ def _publish_evaluation(output: Path, files: Mapping[str, bytes]) -> Path:
             staged = {path.name: path.read_bytes() for path in stage.iterdir() if path.is_file()}
             if current != staged or len(tuple(output.iterdir())) != len(current):
                 raise ValueError("evaluation output collision")
-            shutil.rmtree(stage)
+            remove_tree(stage)
             return output
         stage.replace(output)
         return output
     except Exception:
         if stage.exists():
-            shutil.rmtree(stage)
+            remove_tree(stage)
         raise
 
 
@@ -793,7 +792,7 @@ def _atomic_snapshot(
                 raise ValueError(f"{label} collision")
             if precommit is not None:
                 precommit()
-            shutil.rmtree(stage)
+            remove_tree(stage)
             return destination, False
         if precommit is not None:
             precommit()
@@ -801,7 +800,7 @@ def _atomic_snapshot(
         return destination, True
     except Exception:
         if stage.exists() and stage.is_relative_to(staging_root.resolve()):
-            shutil.rmtree(stage)
+            remove_tree(stage)
         if not destination_parent_existed and destination_parent.is_dir() and not any(destination_parent.iterdir()):
             destination_parent.rmdir()
         raise
@@ -830,7 +829,7 @@ def _rollback_created_snapshot(destination: Path, root: Path, files: Mapping[str
         actual = child.resolve()
         if not child.is_file() or actual.parent != resolved or actual.read_bytes() != files[child.name]:
             raise ValueError("owned forecast changed before rollback")
-    shutil.rmtree(resolved)
+    remove_tree(resolved)
 
 
 def _parse_utc(value: object, label: str) -> datetime:

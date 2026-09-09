@@ -3,6 +3,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
+import shutil
+import stat
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -144,6 +147,18 @@ def sha256_file(path: Path) -> str:
         for block in iter(lambda: handle.read(65536), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def remove_tree(path: Path) -> None:
+    """Remove a tree even when OneDrive marks a child as read-only on Windows."""
+
+    def clear_readonly(function, target, error):
+        if not isinstance(error, PermissionError):
+            raise error
+        os.chmod(target, stat.S_IWRITE)
+        function(target)
+
+    shutil.rmtree(path, onexc=clear_readonly)
 
 
 def write_summary_csv(result: RunResult, path: Path) -> None:

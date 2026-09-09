@@ -303,7 +303,7 @@ class PortfolioFrozenReportTests(PortfolioFixture):
                 return key == "Adj Close"
 
             def __getitem__(self, key: str):
-                return {datetime(2025, 1, 31): 100.0}
+                return {datetime(2025, 1, 30): math.nan, datetime(2025, 1, 31): 100.0}
 
         class Ticker:
             def __init__(self, ticker: str):

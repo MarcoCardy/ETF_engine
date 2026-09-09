@@ -255,8 +255,8 @@ class ChronosCovariateTests(unittest.TestCase):
 
         return {
             "ECB_DFR": ecb or parse_ecb_dfr(self.ecb_artifact((
-                ("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"),
-                ("D.U2.EUR.4F.KR.DFR.LEV", "2024-02-15", "4.0"),
+                ("FM.D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"),
+                ("FM.D.U2.EUR.4F.KR.DFR.LEV", "2024-02-15", "4.0"),
             ))),
             "US_TREASURY_10Y": dgs10 or self.fred_rows("DGS10", (
                 ("2024-01-02", "4.20"), ("2024-01-03", "4.30"), ("2024-02-01", "4.40"),
@@ -279,16 +279,16 @@ class ChronosCovariateTests(unittest.TestCase):
         from perpetual_engine.chronos_data import normalize_covariates, parse_ecb_dfr
 
         rows = parse_ecb_dfr(self.ecb_artifact((
-            ("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"),
-            ("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-20", "3.5"),
-            ("D.U2.EUR.4F.KR.DFR.LEV", "2024-02-15", "4.0"),
+            ("FM.D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"),
+            ("FM.D.U2.EUR.4F.KR.DFR.LEV", "2024-01-20", "3.5"),
+            ("FM.D.U2.EUR.4F.KR.DFR.LEV", "2024-02-15", "4.0"),
         )))
         table = normalize_covariates(self.config, (date(2024, 1, 31), date(2024, 2, 29)), self.rows_with(ecb=rows))
         self.assertEqual(table.values[table.names.index("ECB_DFR")].tolist(), [3.5, 4.0])
         for bad_rows in (
             (("WRONG", "2024-01-01", "3.0"),),
-            (("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "bad"),),
-            (("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"), ("D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.1")),
+            (("FM.D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "bad"),),
+            (("FM.D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.0"), ("FM.D.U2.EUR.4F.KR.DFR.LEV", "2024-01-01", "3.1")),
         ):
             with self.subTest(bad_rows=bad_rows), self.assertRaises(ValueError):
                 parse_ecb_dfr(self.ecb_artifact(bad_rows))
@@ -309,6 +309,11 @@ class ChronosCovariateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "daily series.*unavailable"):
             normalize_covariates(self.config, (date(2024, 1, 31),), self.rows_with(dgs10=rows))
 
+    def test_source_rows_not_yet_available_at_retrieval_are_omitted(self):
+        rows = self.fred_rows("DGS10", (("2025-12-30", "4.20"), ("2026-01-01", "4.30")))
+
+        self.assertEqual([row.observation_date for row in rows], [date(2025, 12, 30)])
+
     def test_brent_uses_log_monthly_mean_return_and_seven_day_lag(self):
         from perpetual_engine.chronos_data import normalize_covariates
 
@@ -327,6 +332,20 @@ class ChronosCovariateTests(unittest.TestCase):
             normalize_covariates(self.config, (date(2024, 3, 31),), self.rows_with(bis=rows))
         table = normalize_covariates(self.config, (date(2024, 4, 30), date(2024, 5, 31)), self.rows_with(bis=rows))
         self.assertEqual(table.values[table.names.index("BIS_USD_CREDIT_YOY")].tolist(), [5.6, 5.6])
+
+    def test_bis_accepts_current_code_and_label_cells(self):
+        from perpetual_engine.chronos_data import parse_bis_gli
+
+        dimensions = (
+            "Q: Quarterly", "USD: US dollar", "3P: All countries excluding residents",
+            "N: Non-banks", "A: All sectors", "I: Cross-border and Local in FCY",
+            "B: Credit (loans & debt securities)",
+        )
+        rows = parse_bis_gli(self.bis_artifact(
+            "2023-Q4", "5.6", dimensions=dimensions, unit="771: Year-on-year change",
+        ))
+
+        self.assertEqual([float(row.value) for row in rows], [5.6])
 
     def test_bis_rejects_unexpected_key_malformed_period_and_number(self):
         from perpetual_engine.chronos_data import parse_bis_gli
@@ -353,6 +372,14 @@ class ChronosCovariateTests(unittest.TestCase):
         self.assertAlmostEqual(float(table.values[table.names.index("US_CPI_YOY"), 0]), 10.0)
         with self.assertRaises(ValueError):
             self.fred_rows("CPILFESL", (("2023-01-01", "100"), ("2024-01-01", "110")))
+
+    def test_cpi_carries_last_published_yoy_when_a_month_is_missing(self):
+        from perpetual_engine.chronos_data import normalize_covariates
+
+        rows = self.fred_rows("CPIAUCNS", (("2023-01-01", "100"), ("2024-01-01", "110")))
+        table = normalize_covariates(self.config, (date(2024, 3, 31),), self.rows_with(cpi=rows))
+
+        self.assertAlmostEqual(float(table.values[table.names.index("US_CPI_YOY"), 0]), 10.0)
 
     def test_normalization_rejects_missing_duplicate_and_nonfinite_data(self):
         from perpetual_engine.chronos_data import normalize_covariates
@@ -433,8 +460,8 @@ class ChronosRefreshTests(unittest.TestCase):
         return {
             ChronosCovariateTests.ECB_URL: (
                 "KEY,TIME_PERIOD,OBS_VALUE\n"
-                "D.U2.EUR.4F.KR.DFR.LEV,2024-01-01,3.0\n"
-                "D.U2.EUR.4F.KR.DFR.LEV,2024-02-15,4.0\n"
+                "FM.D.U2.EUR.4F.KR.DFR.LEV,2024-01-01,3.0\n"
+                "FM.D.U2.EUR.4F.KR.DFR.LEV,2024-02-15,4.0\n"
             ).encode(),
             "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10": self._fred("DGS10", (
                 ("2024-01-02", "4.20"), ("2024-01-03", "4.30"), ("2024-02-01", "4.40"),

@@ -5,7 +5,6 @@ import hashlib
 import io
 import json
 import math
-import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass, replace
@@ -16,7 +15,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 import numpy as np
 
-from perpetual_engine.io import canonical_json, sha256_file
+from perpetual_engine.io import canonical_json, remove_tree, sha256_file
 from perpetual_engine.data_sources import SourceArtifact, fetch_url, freeze_bytes, parse_fred_csv
 from perpetual_engine.point_in_time import ObservationRow, validate_rows
 
@@ -40,7 +39,7 @@ _AVAILABILITY = {
     "US_CPI_YOY": "following_month_end",
 }
 _ECB_URL = "https://data-api.ecb.europa.eu/service/data/FM/D.U2.EUR.4F.KR.DFR.LEV?format=csvdata"
-_ECB_KEY = "D.U2.EUR.4F.KR.DFR.LEV"
+_ECB_KEY = "FM.D.U2.EUR.4F.KR.DFR.LEV"
 _BIS_URL = "https://data.bis.org/static/bulk/WS_GLI_csv_flat.zip"
 _BIS_MEMBER = "WS_GLI_csv_flat.csv"
 _BIS_FIELDS = (
@@ -266,9 +265,12 @@ def parse_ecb_dfr(artifact: SourceArtifact) -> tuple[ObservationRow, ...]:
             if observed in seen:
                 raise ValueError("ECB has duplicate observations")
             seen.add(observed)
+            available_at = datetime(observed.year, observed.month, observed.day, tzinfo=timezone.utc)
+            if available_at > artifact.retrieved_at:
+                continue
             rows.append(ObservationRow(
                 "ECB_DFR", observed, observed,
-                datetime(observed.year, observed.month, observed.day, tzinfo=timezone.utc),
+                available_at,
                 value, "percent_per_annum", artifact.source_url, artifact.retrieved_at, artifact.source_hash,
                 quality_flags=("ECB_OFFICIAL", "EFFECTIVE_DATE"),
             ))
@@ -308,7 +310,9 @@ def parse_bis_gli(artifact: SourceArtifact) -> tuple[ObservationRow, ...]:
                 dimensions = _BIS_FIELDS[:7]
                 expected = ("Q", "USD", "3P", "N", "A", "I", "B")
                 for record in reader:
-                    if tuple((record.get(field) or "").strip() for field in dimensions) != expected or (record.get(_BIS_FIELDS[7]) or "").strip() != "771":
+                    codes = tuple((record.get(field) or "").split(":", 1)[0].strip() for field in dimensions)
+                    unit_code = (record.get(_BIS_FIELDS[7]) or "").split(":", 1)[0].strip()
+                    if codes != expected or unit_code != "771":
                         continue
                     period = (record.get(_BIS_FIELDS[8]) or "").strip()
                     period_end = _quarter_end(period)
@@ -318,8 +322,11 @@ def parse_bis_gli(artifact: SourceArtifact) -> tuple[ObservationRow, ...]:
                         raise ValueError("BIS observation value is malformed") from error
                     if not value.is_finite():
                         raise ValueError("BIS observation value must be finite")
+                    available_at = _bis_available_at(period_end)
+                    if available_at > artifact.retrieved_at:
+                        continue
                     rows.append(ObservationRow(
-                        "BIS_USD_CREDIT_YOY", period_end, period_end, _bis_available_at(period_end),
+                        "BIS_USD_CREDIT_YOY", period_end, period_end, available_at,
                         value, "percent_yoy", artifact.source_url, artifact.retrieved_at, artifact.source_hash,
                         quality_flags=("BIS_OFFICIAL", "QUARTER_END_PLUS_4_MONTHS"),
                     ))
@@ -341,13 +348,14 @@ def parse_fred_covariate(artifact: SourceArtifact, series_id: str) -> tuple[Obse
             artifact, series_id=series_id, unit="usd_per_barrel", source_scale="raw",
             frequency="daily", availability="observation_end",
         )
-        return validate_rows(tuple(replace(row, available_at=row.available_at + timedelta(days=7)) for row in rows))
+        delayed = tuple(replace(row, available_at=row.available_at + timedelta(days=7)) for row in rows)
+        return validate_rows(tuple(row for row in delayed if row.available_at <= artifact.retrieved_at))
     if series_id == "CPIAUCNS":
         rows = parse_fred_csv(
             artifact, series_id=series_id, unit="index_1982_1984_100", source_scale="raw",
             frequency="monthly", availability="month_end",
         )
-        return validate_rows(tuple(replace(
+        delayed = tuple(replace(
             row,
             available_at=datetime(
                 _next_month_end(row.observation_date).year,
@@ -355,7 +363,8 @@ def parse_fred_covariate(artifact: SourceArtifact, series_id: str) -> tuple[Obse
                 _next_month_end(row.observation_date).day,
                 23, 59, 59, tzinfo=timezone.utc,
             ),
-        ) for row in rows))
+        ) for row in rows)
+        return validate_rows(tuple(row for row in delayed if row.available_at <= artifact.retrieved_at))
     raise ValueError("FRED covariate series must be DGS10, DCOILBRENTEU, or CPIAUCNS")
 
 
@@ -421,11 +430,15 @@ def normalize_covariates(
         if not bis:
             raise ValueError(f"BIS is unavailable for {month.isoformat()}")
         columns[3].append(float(max(bis, key=lambda row: row.period_end).value))
-        cpi_month = month.replace(day=1) - timedelta(days=1)
         eligible_cpi = {row.observation_date: row for row in _eligible(rows["US_CPI_YOY"], cutoff)}
-        current_cpi, prior_cpi = eligible_cpi.get(cpi_month), eligible_cpi.get(_previous_year(cpi_month))
-        if current_cpi is None or prior_cpi is None:
+        pair = next((
+            (row, eligible_cpi[_previous_year(row.observation_date)])
+            for row in sorted(eligible_cpi.values(), key=lambda item: item.observation_date, reverse=True)
+            if row.observation_date <= month and _previous_year(row.observation_date) in eligible_cpi
+        ), None)
+        if pair is None:
             raise ValueError(f"CPI is unavailable for {month.isoformat()}")
+        current_cpi, prior_cpi = pair
         if prior_cpi.value <= 0:
             raise ValueError("normalized covariate values must be finite")
         columns[4].append(100.0 * (float(current_cpi.value / prior_cpi.value) - 1.0))
@@ -677,7 +690,10 @@ def refresh_chronos_data(
             if not isinstance(content, bytes):
                 raise ValueError("source fetcher must return bytes")
             artifact = freeze_bytes(content, spec.url, retrieved_at, stage / "raw", f"chronos-v1:{spec.parser}")
-            source_rows[spec.source_id] = _parse_source(spec, artifact)
+            try:
+                source_rows[spec.source_id] = _parse_source(spec, artifact)
+            except ValueError as error:
+                raise ValueError(f"{spec.source_id}: {error}") from error
             records.append({
                 "id": spec.source_id,
                 "url": spec.url,
@@ -727,12 +743,12 @@ def refresh_chronos_data(
             _replace_current_pointer(config.data_root, pointer)
         except OSError as error:
             if published is not None and published.exists():
-                shutil.rmtree(published)
+                remove_tree(published)
             raise ValueError("current vintage pointer could not be published") from error
         return vintage_id
     finally:
         if stage.exists() and stage.is_relative_to(staging_root.resolve()):
-            shutil.rmtree(stage)
+            remove_tree(stage)
 
 
 def load_covariate_vintage(config: ChronosConfig, vintage_id: str) -> MonthlyTable:

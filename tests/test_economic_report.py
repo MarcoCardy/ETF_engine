@@ -51,6 +51,33 @@ def test_catalog_lists_requested_series_when_vintages_are_missing(tmp_path):
     assert by_name["MSCI_WORLD_FORWARD_EARNINGS_YIELD"]["status"] == "UNAVAILABLE_NO_POINT_IN_TIME_SOURCE"
 
 
+def test_catalog_reads_chronos_vintage_manifest_behind_current_pointer(tmp_path):
+    import json
+
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "data_sources_v1.json").write_text('{"sources":[]}', encoding="utf-8")
+    (config / "chronos_v1.json").write_text(
+        '{"sources":[{"id":"ECB_DFR","url":"https://example.test/ecb.csv","role":"known_future"}]}',
+        encoding="utf-8",
+    )
+    data = tmp_path / "data" / "chronos_v1"
+    vintage_id = "a" * 64
+    vintage = data / "vintages" / vintage_id
+    vintage.mkdir(parents=True)
+    (data / "current_manifest.json").write_text(json.dumps({"vintage_id": vintage_id}), encoding="utf-8")
+    (vintage / "manifest.json").write_text(
+        json.dumps({"vintage_id": vintage_id, "sources": [{"id": "ECB_DFR"}]}), encoding="utf-8",
+    )
+
+    from perpetual_engine.economic_report import economic_series_catalog
+
+    by_name = {row["series"]: row for row in economic_series_catalog(tmp_path)}
+
+    assert by_name["ECB_DFR"]["status"] == "AVAILABLE"
+    assert by_name["ECB_DFR"]["vintage_id"] == vintage_id
+
+
 def test_alignment_uses_publication_timestamp_not_observation_date():
     from perpetual_engine.economic_report import align_rows_asof
 
@@ -69,6 +96,18 @@ def test_alignment_uses_publication_timestamp_not_observation_date():
     assert values[1:].tolist() == [100.0, 100.0]
 
 
+def test_alignment_carries_latest_available_observation():
+    from perpetual_engine.economic_report import align_rows_asof
+
+    rows = (
+        _row(date(2024, 1, 31), datetime(2024, 2, 15, tzinfo=timezone.utc), "100"),
+        _row(date(2024, 2, 29), datetime(2024, 3, 15, tzinfo=timezone.utc), "110"),
+    )
+    dates = np.asarray(["2024-02-29", "2024-03-15", "2024-04-01"], dtype="datetime64[D]")
+
+    assert align_rows_asof(dates, rows, "TEST").tolist() == [100.0, 110.0, 110.0]
+
+
 def test_general_source_config_declares_vix_and_direct_breakeven():
     import json
     from pathlib import Path
@@ -78,6 +117,18 @@ def test_general_source_config_declares_vix_and_direct_breakeven():
 
     assert sources["FRED_VIXCLS"]["series_id"] == "VIXCLS"
     assert sources["FRED_T10YIE"]["series_id"] == "T10YIE"
+
+
+def test_economic_refresh_config_excludes_unrelated_backtest_sources():
+    import json
+    from pathlib import Path
+
+    config = json.loads((Path(__file__).parents[1] / "config" / "economic_sources_v1.json").read_text(encoding="utf-8"))
+    sources = {item["source_id"] for item in config["sources"]}
+
+    assert config["build_backtest_bundle"] is False
+    assert {"DAMODARAN_ERP_MONTHLY", "FRED_VIXCLS", "FRED_DGS10", "FRED_DFII10", "FRED_T10YIE", "FRED_DEXUSEU"} <= sources
+    assert "FRED_USD1MTD156N" not in sources
 
 
 def test_risk_inputs_load_frozen_series_and_current_erp(tmp_path):

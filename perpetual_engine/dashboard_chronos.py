@@ -6,7 +6,6 @@ import hashlib
 import io
 import json
 import math
-import shutil
 import tempfile
 from contextlib import ExitStack, contextmanager
 from ctypes import wintypes
@@ -45,7 +44,7 @@ from perpetual_engine.chronos_data import (
     load_covariate_table,
     load_covariate_vintage,
 )
-from perpetual_engine.io import canonical_json
+from perpetual_engine.io import canonical_json, remove_tree
 from perpetual_engine.portfolio_monitor import ComponentSpec, load_current_portfolio_prices, load_portfolio_config
 
 
@@ -1260,7 +1259,7 @@ def _immutable_request(destination: Path, payload: bytes) -> Path:
         return (destination / "request.json").resolve()
     except Exception:
         if stage.exists() and stage.is_relative_to(staging_root):
-            shutil.rmtree(stage)
+            remove_tree(stage)
         raise
 
 

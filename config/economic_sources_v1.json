@@ -1,0 +1,89 @@
+{
+  "schema_version": "DATA_SOURCES_V1",
+  "version": "1.0",
+  "output_data_root": "../data/frozen",
+  "build_backtest_bundle": false,
+  "sources": [
+    {
+      "source_id": "DAMODARAN_ERP_ANNUAL",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pc/datasets/histimpl.xls",
+      "parser_kind": "damodaran_annual",
+      "parser_version": "1",
+      "status": "required",
+      "normalized_path": "damodaran_erp_annual.csv"
+    },
+    {
+      "source_id": "DAMODARAN_ERP_MONTHLY",
+      "url": "https://pages.stern.nyu.edu/~adamodar/pc/implprem/ERPbymonth.xlsx",
+      "parser_kind": "damodaran_monthly",
+      "parser_version": "1",
+      "status": "required",
+      "normalized_path": "damodaran_erp_monthly.csv"
+    },
+    {
+      "source_id": "FRED_DEXUSEU",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXUSEU",
+      "parser_kind": "fred_csv",
+      "parser_version": "1",
+      "status": "required",
+      "normalized_path": "fx_dexuseu.csv",
+      "series_id": "DEXUSEU",
+      "unit": "USD_per_EUR",
+      "source_scale": "raw",
+      "frequency": "daily",
+      "availability": "observation_end"
+    },
+    {
+      "source_id": "FRED_DGS10",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10",
+      "parser_kind": "fred_csv",
+      "parser_version": "1",
+      "status": "required",
+      "normalized_path": "rates_dgs10.csv",
+      "series_id": "DGS10",
+      "unit": "annual_decimal",
+      "source_scale": "percent",
+      "frequency": "daily",
+      "availability": "treasury_next_business_day"
+    },
+    {
+      "source_id": "FRED_DFII10",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFII10",
+      "parser_kind": "fred_csv",
+      "parser_version": "1",
+      "status": "required",
+      "normalized_path": "rates_dfii10.csv",
+      "series_id": "DFII10",
+      "unit": "annual_decimal",
+      "source_scale": "percent",
+      "frequency": "daily",
+      "availability": "treasury_next_business_day"
+    },
+    {
+      "source_id": "FRED_T10YIE",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=T10YIE",
+      "parser_kind": "fred_csv",
+      "parser_version": "1",
+      "status": "required",
+      "normalized_path": "rates_t10yie.csv",
+      "series_id": "T10YIE",
+      "unit": "annual_decimal",
+      "source_scale": "percent",
+      "frequency": "daily",
+      "availability": "observation_end"
+    },
+    {
+      "source_id": "FRED_VIXCLS",
+      "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=VIXCLS",
+      "parser_kind": "fred_csv",
+      "parser_version": "1",
+      "status": "required",
+      "normalized_path": "risk_vix.csv",
+      "series_id": "VIXCLS",
+      "unit": "index",
+      "source_scale": "raw",
+      "frequency": "daily",
+      "availability": "observation_end"
+    }
+  ]
+}

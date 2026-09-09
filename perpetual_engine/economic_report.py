@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import csv
 import math
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Mapping, Sequence
 
 import numpy as np
 
-from perpetual_engine.point_in_time import ObservationRow, asof_select, load_observation_csv
+from perpetual_engine.point_in_time import ObservationRow, load_observation_csv, validate_rows
 
 
 @dataclass(frozen=True)
@@ -86,13 +87,14 @@ def economic_series_catalog(project_root: Path) -> tuple[dict[str, object], ...]
     general = _configured_sources(root / "config" / "data_sources_v1.json", "source_id")
     chronos = _configured_sources(root / "config" / "chronos_v1.json", "id")
     frozen_manifest, frozen = _manifest_sources(root / "data" / "frozen" / "current_manifest.json", "source_id")
+    chronos_pointer = _object(root / "data" / "chronos_v1" / "current_manifest.json") or {}
+    chronos_id = chronos_pointer.get("vintage_id")
     chronos_manifest, chronos_saved = _manifest_sources(
-        root / "data" / "chronos_v1" / "current_manifest.json", "id"
+        root / "data" / "chronos_v1" / "vintages" / str(chronos_id) / "manifest.json", "id"
     )
     factor_path = root / "outputs" / "four_sleeve_v1" / "monthly_returns.csv"
     frozen_rows = _frozen_rows(root)
     chronos_latest = None
-    chronos_id = chronos_manifest.get("vintage_id")
     if isinstance(chronos_id, str):
         table_path = root / "data" / "chronos_v1" / "vintages" / chronos_id / "covariates.csv"
         try:
@@ -168,11 +170,16 @@ def align_rows_asof(
     candidates = tuple(row for row in rows if row.series_id == series_id)
     if not candidates:
         raise ValueError(f"economic series {series_id} is missing")
+    ordered = sorted(
+        validate_rows(candidates),
+        key=lambda row: (row.available_at, row.observation_date, row.retrieved_at, row.source_hash),
+    )
+    availability = [row.available_at for row in ordered]
     values = []
     for value in observed:
         day = date.fromisoformat(str(value))
-        selected = asof_select(candidates, datetime.combine(day, time.max, tzinfo=timezone.utc))
-        values.append(float("nan") if selected is None else float(selected.value))
+        position = bisect_right(availability, datetime.combine(day, time.max, tzinfo=timezone.utc)) - 1
+        values.append(float("nan") if position < 0 else float(ordered[position].value))
     result = np.asarray(values, dtype=float)
     result.setflags(write=False)
     return result
@@ -287,6 +294,6 @@ def refresh_economic_data(project_root: Path) -> dict[str, str]:
 
     root = Path(project_root).resolve()
     chronos = refresh_chronos_data(root / "config" / "chronos_v1.json")
-    refresh_data(root / "config" / "data_sources_v1.json")
+    refresh_data(root / "config" / "economic_sources_v1.json")
     frozen = _object(root / "data" / "frozen" / "current_manifest.json") or {}
     return {"chronos_vintage": str(chronos), "frozen_vintage": str(frozen.get("vintage_id", ""))}

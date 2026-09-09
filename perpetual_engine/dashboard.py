@@ -315,10 +315,8 @@ def _render_chronos(paths: DashboardPaths, status: DashboardDataStatus | None) -
     st.info("Modulo sperimentale in modalità shadow: non modifica il portafoglio e non genera ordini.")
     risk_config = paths.project_root / "config" / "chronos_risk_v1.json"
     risk_output = paths.project_root / "outputs" / "chronos_risk_v1"
-    from perpetual_engine.economic_report import economic_series_catalog
-
     st.subheader("Serie economiche disponibili")
-    st.dataframe(pd.DataFrame(economic_series_catalog(paths.project_root)), hide_index=True, width="stretch")
+    st.dataframe(pd.DataFrame(_cached_economic_catalog(str(paths.project_root))), hide_index=True, width="stretch")
     st.caption("Le serie sono aggiornate soltanto con il pulsante seguente; generare un report non usa Internet.")
     if st.button("Aggiorna dati economici", key="refresh_economic_data"):
         try:
@@ -326,6 +324,7 @@ def _render_chronos(paths: DashboardPaths, status: DashboardDataStatus | None) -
 
             with st.status("Aggiornamento delle vintage economiche…", expanded=True):
                 st.session_state.economic_vintages = refresh_economic_data(paths.project_root)
+            _cached_economic_catalog.clear()
             st.session_state.pop("chronos_risk_report", None)
             st.success("Dati economici aggiornati e congelati.")
             st.rerun()
@@ -333,7 +332,7 @@ def _render_chronos(paths: DashboardPaths, status: DashboardDataStatus | None) -
             _show_error(error)
     if st.button("Genera report completo", key="calculate_chronos_report", disabled=status is None or not status.available):
         try:
-            from perpetual_engine.chronos_risk import load_risk_config, load_risk_predictor, publish_current_risk_report
+            from perpetual_engine.chronos_risk import load_risk_config, publish_current_risk_report
 
             with st.spinner("Calcolo locale in corso…"):
                 config = load_risk_config(risk_config)
@@ -398,6 +397,13 @@ def _cached_risk_predictor(config_path: str, model_revision: str):
     from perpetual_engine.chronos_risk import load_risk_config, load_risk_predictor
 
     return load_risk_predictor(load_risk_config(Path(config_path)))
+
+
+@st.cache_data(max_entries=2, show_spinner=False)
+def _cached_economic_catalog(project_root: str):
+    from perpetual_engine.economic_report import economic_series_catalog
+
+    return economic_series_catalog(Path(project_root))
 
 
 def _render_evaluation_job(paths: DashboardPaths) -> None:

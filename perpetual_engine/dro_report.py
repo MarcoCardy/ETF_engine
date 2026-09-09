@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import json
-import shutil
 import tempfile
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -18,7 +17,7 @@ from perpetual_engine.dro import (
     load_dro_config,
     validate_vintage_manifest,
 )
-from perpetual_engine.io import canonical_json
+from perpetual_engine.io import canonical_json, remove_tree
 
 
 _TOTAL_COLUMNS = (
@@ -328,10 +327,10 @@ def run_dro_report(config_path: Path, vintage_root: Path, output_dir: Path) -> i
         (stage / "result.json").write_bytes(canonical_json(result))
         (stage / "report.md").write_text(report, encoding="utf-8", newline="")
         if output_dir.exists():
-            shutil.rmtree(output_dir)
+            remove_tree(output_dir)
         stage.replace(output_dir)
     except Exception:
         if stage.exists():
-            shutil.rmtree(stage)
+            remove_tree(stage)
         raise
     return 0
