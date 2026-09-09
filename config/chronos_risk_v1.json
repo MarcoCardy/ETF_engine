@@ -14,6 +14,8 @@
   "chronos_volatility_modes": ["Q50", "Q90"],
   "beta_volatility_target": 0.18,
   "beta_cap": 1.60,
+  "trend_windows": [50, 200],
+  "structural_volatility_window": 756,
   "risk_regime_thresholds": [0.15, 0.22, 0.30],
   "price_config": "config/portfolio_p_v1.json",
   "portfolio_snapshot": "config/portfolio_snapshot_2026-08-17.json",

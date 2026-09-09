@@ -1,0 +1,3 @@
+data/dro_v1/**/*.csv -text
+data/chronos_v1/** -text
+data/frozen/** -text

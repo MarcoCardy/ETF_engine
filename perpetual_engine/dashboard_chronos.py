@@ -6,7 +6,6 @@ import hashlib
 import io
 import json
 import math
-import shutil
 import tempfile
 from contextlib import ExitStack, contextmanager
 from ctypes import wintypes
@@ -34,6 +33,7 @@ from perpetual_engine.chronos import (
     evaluation_variants,
     load_chronos_predictor,
     moving_block_interval,
+    moving_block_p_value,
     pinball_loss,
 )
 from perpetual_engine.chronos_data import (
@@ -44,7 +44,7 @@ from perpetual_engine.chronos_data import (
     load_covariate_table,
     load_covariate_vintage,
 )
-from perpetual_engine.io import canonical_json
+from perpetual_engine.io import canonical_json, remove_tree
 from perpetual_engine.portfolio_monitor import ComponentSpec, load_current_portfolio_prices, load_portfolio_config
 
 
@@ -1132,6 +1132,10 @@ CONTRIBUTION_COLUMNS = (
     "covariate", "comparison", "scope", "horizon", "loss_metric", "origin_count",
     "loss_without", "loss_with", "improvement", "ci_low", "ci_high", "classification",
 )
+SIGNIFICANCE_COLUMNS = (
+    "as_of_month", "covariate", "comparison", "scope", "horizon", "loss_metric",
+    "origin_count", "mean_improvement", "p_value", "status",
+)
 EVALUATION_VOLATILITY_COLUMNS = (
     "origin", "scope", "symbol", "isin", "horizon", "origin_count",
     "trailing_volatility_12m", "volatility_tercile", "q10", "q50", "q90",
@@ -1139,7 +1143,7 @@ EVALUATION_VOLATILITY_COLUMNS = (
 )
 _EVALUATION_FILES = {
     "predictions.csv", "metrics.csv", "covariate_contribution.csv",
-    "volatility_diagnostics.csv", "manifest.json",
+    "volatility_diagnostics.csv", "monthly_significance.csv", "manifest.json",
 }
 _REQUEST_SCHEMA = "DIRECT_CHRONOS_EVALUATION_REQUEST_V1"
 _EVALUATION_SCHEMA = "DIRECT_CHRONOS_EVALUATION_V1"
@@ -1255,7 +1259,7 @@ def _immutable_request(destination: Path, payload: bytes) -> Path:
         return (destination / "request.json").resolve()
     except Exception:
         if stage.exists() and stage.is_relative_to(staging_root):
-            shutil.rmtree(stage)
+            remove_tree(stage)
         raise
 
 
@@ -1502,7 +1506,10 @@ def _evaluation_derived(
     series: tuple[dict[str, Any], ...],
     candidate: DirectPortfolio,
     config: ChronosConfig,
-) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], dict[str, dict[str, object]]]:
+) -> tuple[
+    list[dict[str, object]], list[dict[str, object]], list[dict[str, object]],
+    list[dict[str, object]], dict[str, dict[str, object]],
+]:
     origins, eligible = _scope_origins(series)
     variants = tuple(name for name, _enabled in evaluation_variants(REQUIRED_V1_COVARIATES))
     all_variants = (*variants, "ZERO_RETURN_BASELINE")
@@ -1551,6 +1558,7 @@ def _evaluation_derived(
                     ])),
                 })
     contributions: list[dict[str, object]] = []
+    significance: list[dict[str, object]] = []
     for covariate in REQUIRED_V1_COVARIATES:
         for comparison, without_variant, with_variant in (
             ("STANDALONE", "TARGET_ONLY", f"TARGET_PLUS_{covariate}"),
@@ -1583,6 +1591,21 @@ def _evaluation_derived(
                         else:
                             loss_left, loss_right = _mean_pinball(left), _mean_pinball(right)
                         differences.append(loss_left - loss_right)
+                    if comparison == "CONDITIONAL" and scope == "CANDIDATE_PORTFOLIO":
+                        for count, as_of in enumerate(origins[scope], start=1):
+                            prefix = np.asarray(differences[:count], dtype=float)
+                            enough = count >= config.bootstrap_block_months
+                            p_value = moving_block_p_value(prefix, config) if enough else ""
+                            mean_improvement = float(prefix.mean())
+                            significance.append({
+                                "as_of_month": as_of, **base, "origin_count": count,
+                                "mean_improvement": mean_improvement, "p_value": p_value,
+                                "status": (
+                                    "INSUFFICIENT_HISTORY" if not enough else
+                                    "SIGNIFICANT_IMPROVEMENT" if mean_improvement > 0 and p_value < 1.0 - config.bootstrap_confidence else
+                                    "NO_SIGNIFICANT_IMPROVEMENT"
+                                ),
+                            })
                     low, high = moving_block_interval(np.asarray(differences), config)
                     if scope == "CANDIDATE_PORTFOLIO":
                         loss_without = float(np.mean([abs(row["actual"] - row["q50"]) for row in without]))
@@ -1628,7 +1651,7 @@ def _evaluation_derived(
         }
         for scope, values in origins.items()
     }
-    return metrics, contributions, volatility, origin_manifest
+    return metrics, contributions, volatility, significance, origin_manifest
 
 
 def _validated_prediction_rows(
@@ -1726,11 +1749,12 @@ def _read_direct_evaluation(
     ):
         raise ValueError("direct evaluation manifest identity is invalid")
     predictions = _validated_prediction_rows(payloads["predictions.csv"], series)
-    metrics, contributions, volatility, origin_manifest = _evaluation_derived(predictions, series, candidate, config)
+    metrics, contributions, volatility, significance, origin_manifest = _evaluation_derived(predictions, series, candidate, config)
     expected = {
         "metrics.csv": _csv_bytes(metrics, EVALUATION_METRIC_COLUMNS),
         "covariate_contribution.csv": _csv_bytes(contributions, CONTRIBUTION_COLUMNS),
         "volatility_diagnostics.csv": _csv_bytes(volatility, EVALUATION_VOLATILITY_COLUMNS),
+        "monthly_significance.csv": _csv_bytes(significance, SIGNIFICANCE_COLUMNS),
     }
     for name, content in expected.items():
         if payloads[name] != content:
@@ -1815,12 +1839,13 @@ def evaluate_direct_request(
                     "horizon": horizon, "actual": float(item["array"][position + horizon]),
                     "q10": 0.0, "q50": 0.0, "q90": 0.0,
                 })
-    metrics, contributions, volatility, origin_manifest = _evaluation_derived(predictions, series, candidate, config)
+    metrics, contributions, volatility, significance, origin_manifest = _evaluation_derived(predictions, series, candidate, config)
     csv_files = {
         "predictions.csv": _csv_bytes(predictions, PREDICTION_COLUMNS),
         "metrics.csv": _csv_bytes(metrics, EVALUATION_METRIC_COLUMNS),
         "covariate_contribution.csv": _csv_bytes(contributions, CONTRIBUTION_COLUMNS),
         "volatility_diagnostics.csv": _csv_bytes(volatility, EVALUATION_VOLATILITY_COLUMNS),
+        "monthly_significance.csv": _csv_bytes(significance, SIGNIFICANCE_COLUMNS),
     }
     manifest = {
         "schema_version": _EVALUATION_SCHEMA, "evaluation_id": request["evaluation_id"],

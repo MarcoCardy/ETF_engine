@@ -132,6 +132,8 @@ def parse_fred_csv(
                 available_at = datetime(observed.year, observed.month, observed.day, 23, 59, 59, tzinfo=timezone.utc)
             else:
                 raise ValueError(f"FRED {series_id} availability rule is invalid")
+            if available_at > artifact.retrieved_at:
+                continue
             output.append(
                 ObservationRow(
                     series_id=series_id,
@@ -427,7 +429,7 @@ def _year(value: object) -> int | None:
 
 def parse_damodaran_annual(path: Path, artifact: SourceArtifact) -> tuple[ObservationRow, ...]:
     _require_damodaran_artifact(artifact, _DAMODARAN_ANNUAL_URL)
-    workbook = xlrd.open_workbook(str(path))
+    workbook = xlrd.open_workbook(str(path), formatting_info=True)
     header: tuple[xlrd.sheet.Sheet, int, int, int] | None = None
     for sheet in workbook.sheets():
         for row_index in range(sheet.nrows):
@@ -447,11 +449,13 @@ def parse_damodaran_annual(path: Path, artifact: SourceArtifact) -> tuple[Observ
             continue
         if year > 2007:
             continue
+        value_cell = sheet.cell(row_index, value_column)
+        if value_cell.value is None or str(value_cell.value).strip() == "":
+            continue
         observation_date = date(year, 12, 31)
         if observation_date in dates:
             raise ValueError("Damodaran annual workbook has duplicate observation dates")
         dates.add(observation_date)
-        value_cell = sheet.cell(row_index, value_column)
         rows.append(
             ObservationRow(
                 series_id="DAMODARAN_ERP_T12M",
@@ -506,6 +510,11 @@ def parse_damodaran_monthly(path: Path, artifact: SourceArtifact) -> tuple[Obser
                 observation_date = date_cell.value.date()
             elif isinstance(date_cell.value, date):
                 observation_date = date_cell.value
+            elif isinstance(date_cell.value, str):
+                try:
+                    observation_date = datetime.strptime(date_cell.value.strip(), "%d-%b-%y").date()
+                except ValueError as error:
+                    raise ValueError(f"{_DAMODARAN_MONTHLY_DATE_FIELD} must be a date") from error
             else:
                 raise ValueError(f"{_DAMODARAN_MONTHLY_DATE_FIELD} must be a date")
             if observation_date.day != 1 or observation_date < _DAMODARAN_MONTHLY_START:
@@ -514,13 +523,16 @@ def parse_damodaran_monthly(path: Path, artifact: SourceArtifact) -> tuple[Obser
                 raise ValueError("Damodaran monthly workbook has duplicate observation dates")
             dates.add(observation_date)
             number_format = str(value_cell.number_format or "")
+            value = value_cell.value
+            if isinstance(value, str) and value.strip().endswith("%"):
+                value = value.strip()[:-1]
             rows.append(
                 ObservationRow(
                     series_id="DAMODARAN_ERP_T12M",
                     observation_date=observation_date,
                     period_end=observation_date,
                     available_at=_monthly_available_at(observation_date),
-                    value=_normalize_erp(value_cell.value, _DAMODARAN_MONTHLY_VALUE_FIELD, "%" in number_format),
+                    value=_normalize_erp(value, _DAMODARAN_MONTHLY_VALUE_FIELD, "%" in number_format),
                     unit="ratio",
                     source_url=artifact.source_url,
                     retrieved_at=artifact.retrieved_at,

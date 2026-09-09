@@ -8,7 +8,7 @@ L’app confronta un singolo ETF con il portafoglio salvato oppure lo studia com
 
 ### 1.2 Previsioni Chronos
 
-La sezione **Previsioni Chronos** contiene il modulo giornaliero di rischio. Premendo **Calcola previsione rischio Chronos** si ottengono distribuzioni di rendimento e volatilità realizzata futura a 5, 10 e 20 sedute, con Q10, Q25, Q50, Q75 e Q90. La previsione usa i prezzi già salvati e non avvia un aggiornamento dati.
+La sezione **Previsioni Chronos** contiene il modulo giornaliero di rischio. Premendo **Genera report completo** si ottengono distribuzioni di rendimento e volatilità realizzata futura a 5, 10 e 20 sedute, con Q10, Q25, Q50, Q75 e Q90. La previsione usa i prezzi e le serie economiche già salvati e non avvia un aggiornamento dati.
 
 Il precedente motore Chronos mensile per WORLD, MOMENTUM, QUALITY e TREND rimane separato e compatibile. I suoi strumenti avanzati di scenario BCE, confronto fra ETF, riconciliazione previsto/reale e valutazione delle variabili non modificano il portafoglio.
 
@@ -32,13 +32,13 @@ Chiudere la scheda del browser non cancella dati o configurazioni. Per arrestare
 
 Nella parte superiore verificare data di acquisizione e intervallo storico. Se lo stato indica dati mancanti, le funzioni che richiedono prezzi vengono disabilitate. Un dato salvato non viene aggiornato automaticamente.
 
-### 3.2 Aggiornare i dati
+### 3.2 Aggiornare prezzi e dati economici
 
-Premere **Aggiorna dati** soltanto quando si desidera acquisire nuove quotazioni. Se l’operazione fallisce, il programma conserva l’ultima versione valida. Non chiudere il lanciatore durante l’aggiornamento.
+Premere **Aggiorna dati** soltanto quando si desiderano nuove quotazioni. Premere **Aggiorna dati economici** per acquisire una nuova vintage di ERP Damodaran, Treasury nominale e reale, breakeven, VIX, EUR/USD e delle altre serie configurate. I due aggiornamenti sono separati; generare un report non usa Internet. Se un’operazione fallisce, il programma conserva l’ultima versione valida. Non chiudere il lanciatore durante l’aggiornamento.
 
 ### 3.3 Generare la prima previsione
 
-Aprire **Previsioni Chronos** e premere **Calcola previsione rischio Chronos**. Il modello locale può impiegare alcuni secondi su CPU. Leggere prima Q50 e Q90 della volatilità a 20 giorni, poi confrontarle con sigma20, sigma60, EWMA e sigmaForecast.
+Aprire **Previsioni Chronos** e premere **Genera report completo**. Il modello locale può impiegare alcuni secondi su CPU. Leggere prima Q50 e Q90 della volatilità a 20 giorni, poi confrontarle con sigma20, sigma60, EWMA e sigmaForecast. Il riquadro beta mostra separatamente il calcolo di produzione e quello Chronos sperimentale.
 
 ## 4. Portafoglio base e portafoglio da studiare
 
@@ -72,7 +72,9 @@ Il modulo giornaliero usa adjusted close: rendimenti, split e distribuzioni dipe
 
 Il motore mensile dispone di tasso sui depositi BCE, Treasury USA decennale nominale, Brent, liquidità BIS e inflazione USA. I valori vengono resi disponibili solo dopo la data di pubblicazione configurata e poi mantenuti costanti fino alla nuova osservazione; non vengono interpolati nel futuro.
 
-Il modulo giornaliero classifica inoltre TIPS reale, breakeven, VIX, EUR/USD, ERP, valutazione e fattori, ma non li usa nel walk-forward pubblicato finché non esiste una storia giornaliera verificata e point-in-time. **Aggiorna dati Chronos** appartiene al flusso mensile avanzato e non è necessario per la previsione giornaliera basata sui prezzi già salvati.
+Il report giornaliero carica, quando disponibili alla data di cutoff, VIX, tassi nominali e reali, breakeven, EUR/USD, ERP, CPI, Brent, liquidità BIS e serie relative di Momentum, Quality e Trend. La tabella **Serie economiche disponibili** indica per ciascuna serie categoria, frequenza, prima e ultima data, numero di osservazioni, ritardo di pubblicazione e idoneità point-in-time. Un’avvertenza nel report segnala serie mancanti o non utilizzabili.
+
+Le vintage ricostruite rispettano le date di pubblicazione configurate e il carry-forward dell’ultima informazione disponibile, senza interpolazione. Per fonti che non offrono vere vintage storiche, questa è una ricostruzione prudente ma non elimina il rischio delle revisioni retroattive; la limitazione rimane visibile nei metadati.
 
 ### 5.3 Cosa accade in caso di errore
 
@@ -104,7 +106,7 @@ Q10 è una soglia di coda bassa: idealmente il risultato reale è inferiore a Q1
 
 ### 7.1 Avvio del calcolo in background
 
-Nel workflow avanzato **Valuta variabili** crea un job separato e registra richiesta, modello, dati e risultato. Il nuovo walk-forward giornaliero può essere eseguito con il comando documentato nel README; l’interfaccia grafica per questo calcolo esteso non è ancora esposta.
+Premendo **Avvia valutazione ablation** l’app crea un job Windows separato e registra richiesta, modello, dati e risultato. Il browser può essere chiuso mentre il calcolo continua. Il job confronta gruppi di covariate nel walk-forward e riporta anche i p-value mese per mese; un p-value non sostituisce la dimensione dell’effetto né la verifica fuori campione.
 
 ### 7.2 Chiusura e riapertura della pagina
 
@@ -136,7 +138,7 @@ Per ogni origine walk-forward vengono salvati cutoff, data finale, valori previs
 
 ### 9.1 File CSV disponibili
 
-Il walk-forward giornaliero crea `predictions.csv`, con quantili, risultati reali e baseline. `metrics.json` contiene MAE, RMSE, bias, correlazioni, sign accuracy, pinball, coperture e QLIKE. I confronti storici dell’app offrono i propri CSV scaricabili.
+Il walk-forward giornaliero crea `predictions.csv`, con quantili, risultati reali e baseline. `metrics.json` contiene MAE, RMSE, bias, correlazioni, sign accuracy, pinball, coperture e QLIKE. Il report operativo aggiunge confronto beta shadow, metriche storiche di utilità del portafoglio, catalogo economico e stato delle covariate. L’ablation in background pubblica i contributi delle serie e i p-value mensili. I confronti storici dell’app offrono i propri CSV scaricabili.
 
 ### 9.2 Manifesti e provenienza dei dati
 

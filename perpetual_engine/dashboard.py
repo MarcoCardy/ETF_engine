@@ -315,16 +315,35 @@ def _render_chronos(paths: DashboardPaths, status: DashboardDataStatus | None) -
     st.info("Modulo sperimentale in modalità shadow: non modifica il portafoglio e non genera ordini.")
     risk_config = paths.project_root / "config" / "chronos_risk_v1.json"
     risk_output = paths.project_root / "outputs" / "chronos_risk_v1"
-    if st.button("Calcola previsione rischio Chronos", disabled=status is None or not status.available):
+    st.subheader("Serie economiche disponibili")
+    st.dataframe(pd.DataFrame(_cached_economic_catalog(str(paths.project_root))), hide_index=True, width="stretch")
+    st.caption("Le serie sono aggiornate soltanto con il pulsante seguente; generare un report non usa Internet.")
+    if st.button("Aggiorna dati economici", key="refresh_economic_data"):
         try:
-            from perpetual_engine.chronos_risk import publish_current_risk_report
+            from perpetual_engine.economic_report import refresh_economic_data
+
+            with st.status("Aggiornamento delle vintage economiche…", expanded=True):
+                st.session_state.economic_vintages = refresh_economic_data(paths.project_root)
+            _cached_economic_catalog.clear()
+            st.session_state.pop("chronos_risk_report", None)
+            st.success("Dati economici aggiornati e congelati.")
+            st.rerun()
+        except Exception as error:
+            _show_error(error)
+    if st.button("Genera report completo", key="calculate_chronos_report", disabled=status is None or not status.available):
+        try:
+            from perpetual_engine.chronos_risk import load_risk_config, publish_current_risk_report
 
             with st.spinner("Calcolo locale in corso…"):
+                config = load_risk_config(risk_config)
                 st.session_state.chronos_risk_report = str(
-                    publish_current_risk_report(risk_config, risk_output) / "report.json"
+                    publish_current_risk_report(
+                        risk_config, risk_output, predictor=_cached_risk_predictor(str(risk_config), config.model_revision)
+                    ) / "report.json"
                 )
         except Exception as error:
             _show_error(error)
+    _render_evaluation_job(paths)
     report_path = st.session_state.get("chronos_risk_report")
     if not report_path:
         st.caption("Premi il pulsante per usare esclusivamente i prezzi già salvati; nessun aggiornamento dati viene eseguito.")
@@ -341,15 +360,91 @@ def _render_chronos(paths: DashboardPaths, status: DashboardDataStatus | None) -
             {"Misura": "sigma60", "Valore": baseline["sigma60"]},
             {"Misura": "EWMA 0,94", "Valore": baseline["ewma_094"]},
             {"Misura": "sigmaForecast", "Valore": baseline["sigma_forecast"]},
-        ]), hide_index=True, use_container_width=True)
+        ]), hide_index=True, width="stretch")
         for horizon, values in report["forecasts"].items():
             with st.expander(f"Orizzonte {horizon}"):
                 st.dataframe(pd.DataFrame({
                     "Quantile": list(values["return_quantiles"]),
                     "Rendimento": list(values["return_quantiles"].values()),
                     "Volatilità": list(values["volatility_quantiles"].values()),
-                }), hide_index=True, use_container_width=True)
+                }), hide_index=True, width="stretch")
+        comparison = report.get("portfolio_comparison", {})
+        st.subheader("Beta Chronos (shadow)")
+        if comparison.get("status") == "AVAILABLE_SHADOW":
+            st.dataframe(pd.DataFrame([{
+                "betaDesired": comparison["beta_desired"],
+                "betaCeiling produzione": comparison["beta_ceiling_production"],
+                "beta operativo produzione": comparison["beta_operational_production"],
+                "betaCeiling Chronos": comparison["beta_ceiling_chronos"],
+                "beta operativo Chronos": comparison["beta_operational_chronos"],
+                "Impatto": comparison["chronos_impact"],
+            }]), hide_index=True, width="stretch")
+        else:
+            st.warning(f"Beta Chronos non disponibile: {comparison.get('reason', comparison.get('status', 'dati mancanti'))}")
+        utility = report.get("portfolio_utility", {})
+        st.subheader("Utilità storica del portafoglio")
+        if "saved_portfolio_historical" in utility:
+            st.dataframe(pd.DataFrame([utility["saved_portfolio_historical"]]), hide_index=True, width="stretch")
+        st.caption("M0–M3 restano non disponibili finché non esistono traiettorie walk-forward di esposizione valide.")
         st.caption(f"Dati fino al {report['data_cutoff']} — modello {report['model']['id']} — nessuna probabilità di drawdown calcolata.")
+    except Exception as error:
+        _show_error(error)
+
+
+@st.cache_resource(max_entries=2)
+def _cached_risk_predictor(config_path: str, model_revision: str):
+    del model_revision
+    from perpetual_engine.chronos_risk import load_risk_config, load_risk_predictor
+
+    return load_risk_predictor(load_risk_config(Path(config_path)))
+
+
+@st.cache_data(max_entries=2, show_spinner=False)
+def _cached_economic_catalog(project_root: str):
+    from perpetual_engine.economic_report import economic_series_catalog
+
+    return economic_series_catalog(Path(project_root))
+
+
+def _render_evaluation_job(paths: DashboardPaths) -> None:
+    from perpetual_engine.chronos_job import read_evaluation_job, start_evaluation_job
+    from perpetual_engine.dashboard_chronos import read_direct_evaluation
+
+    st.subheader("Ablation e p-value mensili")
+    try:
+        job = read_evaluation_job(paths)
+    except Exception as error:
+        _show_error(error)
+        job = None
+    if st.button("Avvia valutazione ablation", key="start_ablation_evaluation", disabled=job is not None and job.state in {"STARTING", "RUNNING"}):
+        try:
+            state = load_dashboard_state(paths.default_config, paths.state)
+            job = start_evaluation_job(paths, state)
+            st.rerun()
+        except Exception as error:
+            _show_error(error)
+    if job is None:
+        st.caption("Nessuna valutazione avviata.")
+        return
+    st.progress(job.progress, text=job.message)
+    if job.state != "SUCCEEDED" or job.result_path is None:
+        if job.state in {"FAILED", "INTERRUPTED"}:
+            st.warning(job.message)
+        return
+    try:
+        read_direct_evaluation(job.result_path, paths.chronos_output_root)
+        contributions = pd.read_csv(job.result_path / "covariate_contribution.csv")
+        significance = pd.read_csv(job.result_path / "monthly_significance.csv")
+        selected = contributions[
+            (contributions["scope"] == "CANDIDATE_PORTFOLIO")
+            & (contributions["comparison"] == "CONDITIONAL")
+            & (contributions["horizon"].astype(str) == "ALL")
+        ]
+        st.dataframe(selected, hide_index=True, width="stretch")
+        if not significance.empty:
+            latest = significance[significance["as_of_month"] == significance["as_of_month"].max()]
+            st.caption("P-value one-sided dell’ultima fine mese disponibile; valori piccoli favoriscono la covariata.")
+            st.dataframe(latest, hide_index=True, width="stretch")
     except Exception as error:
         _show_error(error)
 

@@ -50,7 +50,8 @@ def _safe_path(root: Path, path: Path) -> Path:
     for item in (path, *path.parents):
         if item == root.parent:
             break
-        if item.is_symlink() or item.resolve() != item:
+        resolved = os.path.normcase(str(item.resolve()).removeprefix('\\\\?\\'))
+        if item.is_symlink() or resolved != os.path.normcase(str(item)):
             raise ValueError('Chronos job path contains a link')
     return path
 

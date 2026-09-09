@@ -7,7 +7,6 @@ import json
 import math
 import msvcrt
 import os
-import shutil
 import stat
 import tempfile
 import threading
@@ -31,7 +30,7 @@ from perpetual_engine.chronos_data import (
     load_target_snapshot,
     load_target_table,
 )
-from perpetual_engine.io import canonical_json, sha256_file
+from perpetual_engine.io import canonical_json, remove_tree, sha256_file
 
 
 SCENARIO_NAMES = ("ECB_FLAT", "ECB_DOWN_100BP", "ECB_UP_100BP")
@@ -337,6 +336,22 @@ def moving_block_interval(origin_differences: np.ndarray, config: ChronosConfig)
     return tuple(float(item) for item in np.quantile(means, (tail, 1.0 - tail)))
 
 
+def moving_block_p_value(origin_differences: np.ndarray, config: ChronosConfig) -> float:
+    values = np.asarray(origin_differences, dtype=float)
+    block = config.bootstrap_block_months
+    if values.ndim != 1 or len(values) < block or not np.isfinite(values).all():
+        raise ValueError("bootstrap requires finite per-origin differences and one full block")
+    observed = float(values.mean())
+    centered = values - observed
+    rng = np.random.default_rng(config.bootstrap_seed)
+    starts = np.arange(len(values) - block + 1)
+    blocks_needed = math.ceil(len(values) / block)
+    chosen = rng.choice(starts, size=(config.bootstrap_resamples, blocks_needed), replace=True)
+    indices = (chosen[:, :, None] + np.arange(block)).reshape(config.bootstrap_resamples, -1)[:, :len(values)]
+    exceedances = int(np.count_nonzero(centered[indices].mean(axis=1) >= observed))
+    return float((exceedances + 1) / (config.bootstrap_resamples + 1))
+
+
 def evaluation_variants(covariates: tuple[str, ...]) -> tuple[tuple[str, tuple[str, ...]], ...]:
     if not covariates or len(set(covariates)) != len(covariates):
         raise ValueError("evaluation covariates must be non-empty and unique")
@@ -442,13 +457,13 @@ def _publish_evaluation(output: Path, files: Mapping[str, bytes]) -> Path:
             staged = {path.name: path.read_bytes() for path in stage.iterdir() if path.is_file()}
             if current != staged or len(tuple(output.iterdir())) != len(current):
                 raise ValueError("evaluation output collision")
-            shutil.rmtree(stage)
+            remove_tree(stage)
             return output
         stage.replace(output)
         return output
     except Exception:
         if stage.exists():
-            shutil.rmtree(stage)
+            remove_tree(stage)
         raise
 
 
@@ -777,7 +792,7 @@ def _atomic_snapshot(
                 raise ValueError(f"{label} collision")
             if precommit is not None:
                 precommit()
-            shutil.rmtree(stage)
+            remove_tree(stage)
             return destination, False
         if precommit is not None:
             precommit()
@@ -785,7 +800,7 @@ def _atomic_snapshot(
         return destination, True
     except Exception:
         if stage.exists() and stage.is_relative_to(staging_root.resolve()):
-            shutil.rmtree(stage)
+            remove_tree(stage)
         if not destination_parent_existed and destination_parent.is_dir() and not any(destination_parent.iterdir()):
             destination_parent.rmdir()
         raise
@@ -814,7 +829,7 @@ def _rollback_created_snapshot(destination: Path, root: Path, files: Mapping[str
         actual = child.resolve()
         if not child.is_file() or actual.parent != resolved or actual.read_bytes() != files[child.name]:
             raise ValueError("owned forecast changed before rollback")
-    shutil.rmtree(resolved)
+    remove_tree(resolved)
 
 
 def _parse_utc(value: object, label: str) -> datetime:

@@ -7,7 +7,6 @@ import io
 import json
 import math
 import re
-import shutil
 import statistics
 import tempfile
 from dataclasses import dataclass, replace
@@ -19,7 +18,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
-from perpetual_engine.io import canonical_json
+from perpetual_engine.io import canonical_json, remove_tree
 
 
 _COMPONENTS = (
@@ -299,7 +298,11 @@ def _download_yfinance(ticker: str, *, expected_currency: str, expected_isin: st
     isin = instrument.get_isin() if expected_isin is not None else None
     if currency != expected_currency or (expected_isin is not None and isin not in (expected_isin, None, "-")):
         raise ValueError(f"yfinance identity for {ticker} does not match configured currency/ISIN")
-    rows = [(stamp.date(), float(value)) for stamp, value in history["Adj Close"].items()]
+    rows = [
+        (stamp.date(), float(value))
+        for stamp, value in history["Adj Close"].items()
+        if math.isfinite(float(value))
+    ]
     payload = _daily_bytes(rows)
     _daily_rows(payload, ticker)
     return payload
@@ -518,16 +521,16 @@ def refresh_portfolio_prices(
             _replace_pointer(config.data_root, pointer)
         except OSError as error:
             if published is not None and published.exists():
-                shutil.rmtree(published)
+                remove_tree(published)
             raise ValueError("portfolio current pointer could not be published") from error
         except Exception:
             if published is not None and published.exists():
-                shutil.rmtree(published)
+                remove_tree(published)
             raise
         return vintage_id
     finally:
         if stage.exists() and stage.is_relative_to(staging_root):
-            shutil.rmtree(stage)
+            remove_tree(stage)
 
 
 def _select_price(series: Mapping[date, float], target: date, staleness: int) -> tuple[date, float] | None:

@@ -71,6 +71,36 @@ def test_kelly_trend_and_shadow_beta_can_only_reduce_risk():
     assert comparison.chronos_impact == "REDUCE_RISK"
 
 
+def test_beta_uses_configured_target_cap_and_price_trends():
+    from perpetual_engine.chronos_risk import current_beta_comparison, load_risk_config
+
+    config = load_risk_config(Path("config/chronos_risk_v1.json"))
+    prices = np.linspace(80.0, 120.0, 800)
+    returns = prices[1:] / prices[:-1] - 1.0
+    comparison = current_beta_comparison(
+        config, prices, returns, erp=0.05, sigma_forecast_value=0.15, chronos_vol_q90=0.24,
+    )
+
+    assert comparison.beta_trend == 1.60
+    assert comparison.beta_vol_production == pytest.approx(config.beta_volatility_target / 0.15)
+    assert comparison.beta_vol_chronos == pytest.approx(config.beta_volatility_target / 0.24)
+    assert comparison.beta_operational_chronos <= comparison.beta_operational_production
+
+
+def test_fixed_weight_portfolio_returns_feed_utility_without_future_data():
+    from datetime import date
+    from perpetual_engine.chronos_risk import fixed_weight_portfolio_returns, portfolio_risk_utility
+
+    prices = {
+        "A": {date(2024, 1, 1): 100.0, date(2024, 1, 2): 110.0, date(2024, 1, 3): 110.0},
+        "B": {date(2024, 1, 1): 100.0, date(2024, 1, 2): 100.0, date(2024, 1, 3): 90.0},
+    }
+    result = fixed_weight_portfolio_returns(prices, {"A": 0.6, "B": 0.4})
+
+    np.testing.assert_allclose(result, [0.06, -0.04])
+    assert portfolio_risk_utility(result)["max_drawdown"] == pytest.approx(-0.04)
+
+
 def test_portfolio_snapshot_reconciles_accounting_and_lwld_notional_exposure():
     from perpetual_engine.chronos_risk import load_portfolio_snapshot
 
@@ -99,6 +129,8 @@ def test_risk_config_centralizes_shadow_model_and_financial_constants():
 
     config = load_risk_config(Path("config/chronos_risk_v1.json"))
     assert config.mode == "SHADOW"
+    assert config.trend_windows == (50, 200)
+    assert config.structural_volatility_window == 756
     assert config.horizons == (5, 10, 20)
     assert config.quantiles == (0.10, 0.25, 0.50, 0.75, 0.90)
     assert config.sigma_risk_weights == (0.25, 0.35, 0.40)
@@ -208,6 +240,54 @@ def test_current_report_exposes_baselines_five_quantiles_and_no_trade_signal():
     assert report["chronos_vol_conservative"] == 0.28
     assert report["risk_regime"] == "HIGH_RISK"
     assert "recommendation" not in report
+
+
+def test_published_report_uses_economic_inputs_and_surfaces_beta_and_utility(tmp_path, monkeypatch):
+    from datetime import date
+    from types import SimpleNamespace
+    from perpetual_engine import portfolio_monitor
+    from perpetual_engine.chronos_risk import publish_current_risk_report
+    from perpetual_engine.economic_report import EconomicInputs
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config = json.loads(Path("config/chronos_risk_v1.json").read_text(encoding="utf-8"))
+    config_path = config_dir / "chronos_risk_v1.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    days = np.arange("2022-01-01", "2024-04-01", dtype="datetime64[D]")[:800]
+    swda_values = np.linspace(90.0, 130.0, len(days))
+    iwmo_values = np.linspace(100.0, 150.0, len(days))
+    prices = {
+        "SWDA.MI": {date.fromisoformat(str(day)): float(value) for day, value in zip(days, swda_values)},
+        "IWMO.MI": {date.fromisoformat(str(day)): float(value) for day, value in zip(days, iwmo_values)},
+    }
+    portfolio = SimpleNamespace(components=(
+        SimpleNamespace(component_id="SWDA", ticker="SWDA.MI", weight=0.6),
+        SimpleNamespace(component_id="IWMO", ticker="IWMO.MI", weight=0.4),
+    ))
+    monkeypatch.setattr(portfolio_monitor, "load_current_portfolio_prices", lambda *args, **kwargs: (
+        portfolio, prices, {"vintage_id": "d" * 64, "retrieved_at": "2026-09-08T00:00:00+00:00"},
+    ))
+    economic = EconomicInputs(
+        {"VIX": np.full(len(days) - 1, 18.0), "DAMODARAN_ERP": np.full(len(days) - 1, 0.05)},
+        ({"series": "VIX", "status": "AVAILABLE"},), 0.05, (),
+    )
+
+    def predictor(items, prediction_length, quantile_levels):
+        assert all("VIX" in item["past_covariates"] for item in items)
+        base = np.asarray([[[-0.04, -0.02, 0.01, 0.03, 0.06]], [[0.12, 0.15, 0.18, 0.22, 0.28]]])
+        return [np.tile(base, (1, prediction_length, 1))]
+
+    result = publish_current_risk_report(
+        config_path, tmp_path / "outputs", predictor=predictor, economic_inputs=economic,
+    )
+    report = json.loads((result / "report.json").read_text(encoding="utf-8"))
+
+    assert report["covariates"] == ["DAMODARAN_ERP", "VIX"]
+    assert report["portfolio_comparison"]["status"] == "AVAILABLE_SHADOW"
+    assert report["portfolio_comparison"]["beta_operational_chronos"] <= report["portfolio_comparison"]["beta_operational_production"]
+    assert report["portfolio_utility"]["saved_portfolio_historical"]["max_drawdown"] <= 0
+    assert report["portfolio_utility"]["M1"]["status"] == "UNAVAILABLE_REQUIRES_WALK_FORWARD_EXPOSURE_PATH"
 
 
 def test_cli_accepts_separate_daily_risk_forecast_command():

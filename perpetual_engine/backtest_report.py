@@ -5,7 +5,6 @@ import hashlib
 import json
 import math
 import re
-import shutil
 import tempfile
 from dataclasses import fields, is_dataclass, replace
 from datetime import date, datetime, timedelta, timezone
@@ -33,7 +32,7 @@ from perpetual_engine.data_sources import (
     parse_fred_csv,
     parse_wdi_market_cap_json,
 )
-from perpetual_engine.io import canonical_json, sha256_file
+from perpetual_engine.io import canonical_json, remove_tree, sha256_file
 from perpetual_engine.leveraged_proxy import FundingRate, LeveragedReturn, leveraged_monthly_return
 from perpetual_engine.market_proxy import (
     PublicWorldInputs,
@@ -700,7 +699,7 @@ def refresh_data(config_path: Path, *, retrieved_at: datetime | None = None) -> 
         if published.exists():
             if (published / "manifest.json").read_bytes() != manifest_bytes:
                 raise ValueError("vintage identity collision")
-            shutil.rmtree(stage)
+            remove_tree(stage)
         else:
             stage.replace(published)
             published_created = published
@@ -713,9 +712,9 @@ def refresh_data(config_path: Path, *, retrieved_at: datetime | None = None) -> 
         if temporary_pointer is not None and temporary_pointer.exists():
             temporary_pointer.unlink()
         if published_created is not None and published_created.exists():
-            shutil.rmtree(published_created)
+            remove_tree(published_created)
         if stage.exists():
-            shutil.rmtree(stage)
+            remove_tree(stage)
         raise
 
 
@@ -1076,7 +1075,7 @@ def _write_outputs(
         stage.replace(output_dir)
     except Exception:
         if stage.exists():
-            shutil.rmtree(stage)
+            remove_tree(stage)
         raise
 
 
