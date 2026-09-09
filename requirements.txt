@@ -4,6 +4,7 @@ openpyxl==3.1.5
 xlrd==2.0.2
 packaging>=24
 pytest==8.4.1
+certifi==2026.7.22
 chronos-forecasting==2.3.1
 transformers>=4.41,<5
 streamlit==1.63.0

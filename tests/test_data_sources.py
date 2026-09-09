@@ -4,8 +4,9 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
-from perpetual_engine.data_sources import freeze_bytes
+from perpetual_engine.data_sources import fetch_url, freeze_bytes
 
 
 URL = "https://example.test/artifacts/source.csv"
@@ -13,6 +14,24 @@ NOW = datetime(2026, 8, 22, 10, 30, tzinfo=timezone.utc)
 
 
 class DataSourceTests(TestCase):
+    def test_fetch_url_supplies_a_verified_tls_context(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def read(self):
+                return b"downloaded"
+
+        def urlopen(_url, *, context):
+            self.assertTrue(context.check_hostname)
+            return Response()
+
+        with patch("urllib.request.urlopen", side_effect=urlopen):
+            self.assertEqual(fetch_url(URL), b"downloaded")
+
     def test_freeze_writes_content_and_deterministic_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
             artifact = freeze_bytes(b"one", URL, NOW, Path(directory), "1")

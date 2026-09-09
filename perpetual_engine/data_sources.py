@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ssl
 import urllib.request
 import csv
 from dataclasses import dataclass, replace
@@ -11,6 +12,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import xlrd
+import certifi
 from openpyxl import load_workbook
 
 from perpetual_engine.io import canonical_json, sha256_file
@@ -41,7 +43,7 @@ def fetch_url(url: str) -> bytes:
     """The sole network adapter; parsers and backtests remain offline."""
     if not isinstance(url, str) or not url.startswith("https://"):
         raise ValueError("network source URL must be HTTPS")
-    with urllib.request.urlopen(url) as response:
+    with urllib.request.urlopen(url, context=ssl.create_default_context(cafile=certifi.where())) as response:
         return response.read()
 
 
