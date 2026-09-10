@@ -252,6 +252,38 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
         self.assertEqual(app.button(key="calculate_direct_forecast").label, "Genera previsione portafoglio")
         self.assertFalse((self.root / "data" / "dashboard_v1" / "chronos_candidate_portfolio.json").exists())
 
+    def test_chronos_portfolio_reset_replaces_editor_state(self) -> None:
+        from perpetual_engine import dashboard
+
+        component = SimpleNamespace(component_id="SWDA", weight=0.60)
+        candidate = SimpleNamespace(components=(component,))
+        base = SimpleNamespace(components=(component,))
+
+        class SessionState(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
+        edited = dashboard.pd.DataFrame([{"id": "SWDA", "weight": 100.0}])
+        editor = Mock(return_value=edited)
+        fake = SimpleNamespace(
+            session_state=SessionState(),
+            header=Mock(), info=Mock(), data_editor=editor,
+            button=Mock(side_effect=lambda _label, **kwargs: kwargs["key"] == "reset_chronos_candidate"),
+            dataframe=Mock(), rerun=Mock(),
+            column_config=SimpleNamespace(SelectboxColumn=Mock(), NumberColumn=Mock()),
+        )
+        restored = SimpleNamespace(components=(SimpleNamespace(component_id="SWDA", weight=0.60),))
+        with patch.object(dashboard, "st", fake), patch(
+            "perpetual_engine.dashboard_chronos.load_direct_portfolios", return_value=(candidate, base),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.reset_candidate_portfolio", return_value=restored,
+        ):
+            dashboard._render_chronos_portfolio(SimpleNamespace(), SimpleNamespace(catalog=()), None)
+
+        self.assertEqual(editor.call_args.kwargs["key"], "chronos_candidate_editor_0")
+        self.assertEqual(fake.session_state["chronos_candidate_editor_generation"], 1)
+        self.assertEqual(fake.session_state["chronos_candidate_draft"], [{"id": "SWDA", "weight": 60.0}])
+
     def test_comparison_report_is_scoped_to_selection_and_shows_full_summary(self) -> None:
         output = self.comparison_report()
         mode = "Portafoglio singolo (100%)"

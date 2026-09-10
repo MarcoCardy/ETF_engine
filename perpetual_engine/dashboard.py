@@ -414,7 +414,7 @@ def _render_chronos_portfolio(
     ))
     draft = st.data_editor(
         pd.DataFrame(st.session_state.chronos_candidate_draft),
-        key="chronos_candidate_editor",
+        key=f"chronos_candidate_editor_{st.session_state.get('chronos_candidate_editor_generation', 0)}",
         num_rows="fixed",
         column_config={
             "id": st.column_config.SelectboxColumn("ETF", options=choices, required=True),
@@ -437,6 +437,9 @@ def _render_chronos_portfolio(
         try:
             restored = reset_candidate_portfolio(paths, state)
             st.session_state.chronos_candidate_draft = _direct_portfolio_rows(restored)
+            st.session_state.chronos_candidate_editor_generation = st.session_state.get(
+                "chronos_candidate_editor_generation", 0
+            ) + 1
             st.rerun()
         except Exception as error:
             _show_error(error)
