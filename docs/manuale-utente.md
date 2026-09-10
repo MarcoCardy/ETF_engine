@@ -6,11 +6,13 @@
 
 L’app confronta un singolo ETF con il portafoglio salvato oppure lo studia come portafoglio al 100%. Mostra andamento cumulato, rendimento, volatilità, drawdown, correlazione e contributi dei componenti. Usa soltanto osservazioni comuni realmente disponibili e non ricostruisce artificialmente la storia precedente al lancio di un ETF.
 
-### 1.2 Previsioni Chronos
+### 1.2 Le due sezioni Chronos
 
-La sezione **Previsioni Chronos** contiene il modulo giornaliero di rischio. Premendo **Genera report completo** si ottengono distribuzioni di rendimento e volatilità realizzata futura a 5, 10 e 20 sedute, con Q10, Q25, Q50, Q75 e Q90. La previsione usa i prezzi e le serie economiche già salvati e non avvia un aggiornamento dati.
+La sezione **Chronos rischio** contiene la previsione giornaliera di rendimento e volatilità, il beta shadow, l'ablation e i p-value. Premendo **Genera report completo** si ottengono le distribuzioni previsive a 5, 10 e 20 sedute, con Q10, Q25, Q50, Q75 e Q90. La previsione usa i prezzi e le serie economiche già salvati e non avvia un aggiornamento dati.
 
-Il precedente motore Chronos mensile per WORLD, MOMENTUM, QUALITY e TREND rimane separato e compatibile. I suoi strumenti avanzati di scenario BCE, confronto fra ETF, riconciliazione previsto/reale e valutazione delle variabili non modificano il portafoglio.
+La sezione **Chronos portafoglio** contiene quattro ETF, gli scenari BCE, i quantili per componente e il confronto fra candidato e base, oltre al confronto previsto/reale. Premendo **Genera previsione portafoglio** si avvia esplicitamente il workflow diretto sui dati già disponibili.
+
+Entrambe le sezioni si aprono dal collegamento desktop esistente **Analisi ETF** e usano lo stesso programma locale. Chronos è di ricerca: nessuna delle due sezioni modifica le partecipazioni effettive o esegue operazioni.
 
 ### 1.3 Limiti e uso esclusivamente di ricerca
 
@@ -38,7 +40,9 @@ Premere **Aggiorna dati** soltanto quando si desiderano nuove quotazioni. Premer
 
 ### 3.3 Generare la prima previsione
 
-Aprire **Previsioni Chronos** e premere **Genera report completo**. Il modello locale può impiegare alcuni secondi su CPU. Leggere prima Q50 e Q90 della volatilità a 20 giorni, poi confrontarle con sigma20, sigma60, EWMA e sigmaForecast. Il riquadro beta mostra separatamente il calcolo di produzione e quello Chronos sperimentale.
+Aprire **Chronos rischio** e premere **Genera report completo**. Il modello locale può impiegare alcuni secondi su CPU. Leggere prima Q50 e Q90 della volatilità a 20 giorni, poi confrontarle con sigma20, sigma60, EWMA e sigmaForecast. Il riquadro beta mostra separatamente il calcolo di produzione e quello Chronos sperimentale.
+
+Per il flusso diretto, aprire **Chronos portafoglio**, controllare i quattro componenti e i pesi, quindi premere **Genera previsione portafoglio**. Selezionare poi lo scenario BCE per leggere i quantili di ciascun ETF e i percorsi candidato/base. Il calcolo è avviato solo da questo pulsante esplicito e non crea bande probabilistiche Q10/Q90 del portafoglio sommando i quantili marginali.
 
 ## 4. Portafoglio base e portafoglio da studiare
 
@@ -88,7 +92,7 @@ Il flusso mensile avanzato produce ECB_FLAT, ECB_DOWN_100BP ed ECB_UP_100BP. Son
 
 ### 6.2 Previsioni dei singoli ETF
 
-Il flusso diretto può costruire una previsione separata per ciascun ETF. **Genera previsione** è parte del workflow avanzato conservato nel motore; la pagina corrente espone anzitutto la previsione di rischio SWDA/MSCI World, perché è il bersaglio principale del controllo di portafoglio.
+Il flusso diretto costruisce una previsione separata per ciascuno dei quattro ETF del candidato. **Genera previsione portafoglio** è il pulsante del workflow avanzato: dopo la generazione, scegliere lo scenario BCE e leggere Q10, Q50 e Q90 per componente, insieme ai percorsi candidato/base e alla riconciliazione previsto/reale.
 
 ### 6.3 Percorsi del portafoglio da studiare e del portafoglio base
 
