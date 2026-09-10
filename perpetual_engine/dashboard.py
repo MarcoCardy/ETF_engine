@@ -399,7 +399,11 @@ def _render_chronos_portfolio(
     paths: DashboardPaths, state: DashboardState, status: DashboardDataStatus | None,
 ) -> None:
     from perpetual_engine.dashboard_chronos import (
+        load_chronos_config,
         load_direct_portfolios,
+        publish_direct_forecast,
+        read_direct_forecast,
+        reconcile_direct_forecasts,
         reset_candidate_portfolio,
         save_candidate_portfolio,
     )
@@ -444,11 +448,80 @@ def _render_chronos_portfolio(
         except Exception as error:
             _show_error(error)
     st.dataframe(pd.DataFrame(_direct_portfolio_rows(base)), hide_index=True, width="stretch")
-    st.button(
+    if st.button(
         "Genera previsione portafoglio",
         key="calculate_direct_forecast",
         disabled=status is None or not status.available,
-    )
+    ):
+        try:
+            config = load_chronos_config(paths.chronos_config)
+            result = publish_direct_forecast(
+                paths,
+                state,
+                predictor=_cached_direct_predictor(str(paths.chronos_config), config.model_revision),
+            )
+            st.session_state.direct_forecast_path = str(result.output_dir)
+            st.session_state.direct_monitoring_path = str(reconcile_direct_forecasts(paths, state))
+        except Exception as error:
+            _show_error(error)
+
+    forecast_path = st.session_state.get("direct_forecast_path")
+    if not forecast_path:
+        return
+    try:
+        output_dir = Path(forecast_path)
+        manifest, rows = read_direct_forecast(output_dir, paths.chronos_output_root)
+        scenario = st.selectbox(
+            "Scenario BCE",
+            ("ECB_FLAT", "ECB_DOWN_100BP", "ECB_UP_100BP"),
+            key="direct_forecast_scenario",
+        )
+        etf = pd.DataFrame(rows)
+        for name in ("horizon", "q10", "q50", "q90", "history_count"):
+            if name in etf:
+                etf[name] = pd.to_numeric(etf[name], errors="raise")
+        st.dataframe(etf[etf["scenario"] == scenario], hide_index=True, width="stretch")
+
+        st.subheader("Percorso candidato e base")
+        portfolio = pd.read_csv(output_dir / "portfolio_paths.csv")
+        portfolio["forecast_month"] = pd.to_datetime(portfolio["forecast_month"], errors="raise")
+        portfolio["cumulative_eur_100"] = pd.to_numeric(portfolio["cumulative_eur_100"], errors="raise")
+        paths_chart = portfolio[portfolio["scenario"] == scenario].pivot(
+            index="forecast_month", columns="portfolio", values="cumulative_eur_100",
+        )[["CANDIDATE", "BASE"]]
+        st.line_chart(paths_chart)
+
+        st.subheader("Sensibilità agli scenari BCE")
+        st.dataframe(pd.read_csv(output_dir / "scenario_sensitivity.csv"), hide_index=True, width="stretch")
+        st.subheader("Volatilità")
+        st.dataframe(pd.read_csv(output_dir / "volatility_snapshot.csv"), hide_index=True, width="stretch")
+
+        model = manifest["model"]
+        st.caption(
+            f"Cutoff: {manifest['common_origin']} — modello: {model['id']} @ {model['revision']} — "
+            f"price vintage: {manifest['price_vintage']['vintage_id']} — macro vintage: {manifest['macro_vintage_id']}"
+        )
+        for warning in manifest.get("warnings", ()):
+            st.warning(f"{warning['symbol']}: {warning['warning']}")
+
+        monitoring_path = st.session_state.get("direct_monitoring_path")
+        if monitoring_path:
+            st.subheader("Differenza tra previsto e reale")
+            for name in ("forecast_vs_actual.csv", "pending_forecasts.csv", "live_metrics.csv"):
+                table = pd.read_csv(Path(monitoring_path) / name)
+                if not table.empty:
+                    st.markdown(f"**{name}**")
+                    st.dataframe(table, hide_index=True, width="stretch")
+    except Exception as error:
+        _show_error(error)
+
+
+@st.cache_resource(max_entries=2)
+def _cached_direct_predictor(config_path: str, model_revision: str):
+    del model_revision
+    from perpetual_engine.dashboard_chronos import load_chronos_config, load_chronos_predictor
+
+    return load_chronos_predictor(load_chronos_config(Path(config_path)))
 
 
 @st.cache_resource(max_entries=2)

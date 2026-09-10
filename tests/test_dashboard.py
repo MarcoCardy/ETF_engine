@@ -59,6 +59,87 @@ class DashboardAppTests(unittest.TestCase):
                 writer.writerows(values)
         return output
 
+    def direct_forecast_archive(self) -> tuple[Path, Path, dict[str, object], tuple[dict[str, str], ...]]:
+        forecast = self.root / "outputs" / "dashboard_chronos_v1" / "forecasts" / ("f" * 64)
+        monitoring = self.root / "outputs" / "dashboard_chronos_v1" / "monitoring" / ("a" * 64)
+        forecast.mkdir(parents=True)
+        monitoring.mkdir(parents=True)
+
+        def write_csv(path: Path, fieldnames: list[str], rows: list[list[object]]) -> None:
+            with path.open("w", newline="", encoding="utf-8") as target:
+                writer = csv.writer(target)
+                writer.writerow(fieldnames)
+                writer.writerows(rows)
+
+        etf_columns = [
+            "scenario", "symbol", "isin", "exchange", "currency", "forecast_month", "horizon",
+            "q10", "q50", "q90", "history_count", "history_status",
+        ]
+        etf_values = [
+            [scenario, "SWDA.MI", "IE00B4L5Y983", "Milan", "EUR", "2026-04-30", 1, -0.02, 0.01, 0.04, 61, "SUFFICIENT_HISTORY"]
+            for scenario in ("ECB_FLAT", "ECB_DOWN_100BP", "ECB_UP_100BP")
+        ]
+        write_csv(forecast / "etf_forecast.csv", etf_columns, etf_values)
+        write_csv(
+            forecast / "portfolio_paths.csv",
+            ["portfolio", "scenario", "forecast_month", "horizon", "central_return", "cumulative_eur_100"],
+            [[portfolio, "ECB_FLAT", "2026-04-30", 1, 0.01, value] for portfolio, value in (("CANDIDATE", 101), ("BASE", 100.5))],
+        )
+        write_csv(
+            forecast / "scenario_sensitivity.csv",
+            [
+                "scope", "portfolio", "symbol", "isin", "forecast_month", "horizon", "scenario", "q50",
+                "flat_q50", "q50_delta", "interval_width", "flat_interval_width", "interval_width_delta",
+            ],
+            [["ETF", "", "SWDA.MI", "IE00B4L5Y983", "2026-04-30", 1, "ECB_DOWN_100BP", 0.009, 0.01, -0.001, 0.06, 0.06, 0]],
+        )
+        write_csv(
+            forecast / "volatility_snapshot.csv",
+            [
+                "symbol", "isin", "origin", "history_count", "history_status", "trailing_volatility_12m",
+                "scenario", "forecast_month", "horizon", "interval_width",
+            ],
+            [["SWDA.MI", "IE00B4L5Y983", "2026-03-31", 61, "SUFFICIENT_HISTORY", 0.12, "ECB_FLAT", "2026-04-30", 1, 0.06]],
+        )
+        manifest = {
+            "schema_version": "DIRECT_CHRONOS_FORECAST_V1",
+            "forecast_id": "f" * 64,
+            "issued_at": "2026-04-01T00:00:00+00:00",
+            "common_origin": "2026-03-31",
+            "model": {"id": "amazon/chronos-2", "revision": "model-revision", "package": "chronos-forecasting", "package_version": "2.0", "device": "cpu"},
+            "config_sha256": "1" * 64,
+            "portfolios": {"candidate": {}, "base": {}},
+            "candidate_sha256": "2" * 64,
+            "base_sha256": "3" * 64,
+            "target_series": [],
+            "price_vintage": {"vintage_id": "4" * 64, "manifest_sha256": "5" * 64},
+            "macro_vintage_id": "6" * 64,
+            "scenarios": {name: [2.0] * 12 for name in ("ECB_FLAT", "ECB_DOWN_100BP", "ECB_UP_100BP")},
+            "warnings": [{"symbol": "SWDA.MI", "warning": "STORICO_BREVE"}],
+            "labels": {"forecast": "PROSPECTIVE_SCENARIO_FORECAST", "target_history": "RETROSPECTIVE_INPUT_ONLY", "portfolio_paths": "CENTRAL_Q50_ONLY", "usage": "RESEARCH_ONLY"},
+            "generated_sha256": {},
+        }
+        (forecast / "manifest.json").write_text("{}", encoding="utf-8")
+        monitoring_columns = [
+            "forecast_id", "issued_at", "origin", "scope", "portfolio_sha256", "scenario", "symbol", "isin",
+            "forecast_month", "horizon", "q10", "q50", "q90", "actual", "signed_error", "absolute_error",
+            "squared_error", "interval_hit",
+        ]
+        write_csv(
+            monitoring / "forecast_vs_actual.csv", monitoring_columns,
+            [["f" * 64, "2026-04-01T00:00:00+00:00", "2026-03-31", "ETF", "", "ECB_FLAT", "SWDA.MI", "IE00B4L5Y983", "2026-04-30", 1, -0.02, 0.01, 0.04, 0.015, 0.005, 0.005, 0.000025, "true"]],
+        )
+        write_csv(
+            monitoring / "pending_forecasts.csv", monitoring_columns,
+            [["f" * 64, "2026-04-01T00:00:00+00:00", "2026-03-31", "ETF", "", "ECB_FLAT", "SWDA.MI", "IE00B4L5Y983", "2026-05-31", 2, -0.03, 0.02, 0.05, "", "", "", "", ""]],
+        )
+        write_csv(
+            monitoring / "live_metrics.csv",
+            ["scope", "scenario", "symbol", "isin", "portfolio_sha256", "horizon", "count", "bias", "mae", "rmse", "interval_80_coverage"],
+            [["ETF", "ECB_FLAT", "SWDA.MI", "IE00B4L5Y983", "", 1, 1, 0.005, 0.005, 0.005, 1]],
+        )
+        return forecast, monitoring, manifest, tuple(dict(zip(etf_columns, map(str, row))) for row in etf_values)
+
     def available_status(self, vintage_id: str = "vintage-1"):
         from perpetual_engine.dashboard_service import DashboardDataStatus
 
@@ -283,6 +364,42 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
         self.assertEqual(editor.call_args.kwargs["key"], "chronos_candidate_editor_0")
         self.assertEqual(fake.session_state["chronos_candidate_editor_generation"], 1)
         self.assertEqual(fake.session_state["chronos_candidate_draft"], [{"id": "SWDA", "weight": 60.0}])
+
+    def test_direct_forecast_renders_candidate_base_and_monitoring(self) -> None:
+        from perpetual_engine import dashboard
+        from perpetual_engine.dashboard_service import DashboardPaths, load_dashboard_state, refresh_dashboard_data
+        from tests.test_portfolio_monitor import daily_bytes, months, prices_from_returns
+
+        shutil.copy2(Path(__file__).parents[1] / "config" / "chronos_v1.json", self.root / "config" / "chronos_v1.json")
+        paths = DashboardPaths.from_root(self.root)
+        state = load_dashboard_state(paths.default_config, paths.state)
+        dates = months(14)
+        prices = daily_bytes(list(prices_from_returns(dates, (0.01,) * 13).items()))
+        refresh_dashboard_data(paths, state, downloader=lambda _ticker: prices, retrieved_at=datetime(2026, 3, 2, tzinfo=timezone.utc))
+        forecast_dir, monitoring_dir, manifest, rows = self.direct_forecast_archive()
+
+        def app_script():
+            from perpetual_engine.dashboard import main
+            main()
+
+        with patch.dict(os.environ, {"ETF_DASHBOARD_ROOT": str(self.root)}), patch.object(
+            dashboard, "_cached_direct_predictor", return_value=object(),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.publish_direct_forecast",
+            return_value=SimpleNamespace(output_dir=forecast_dir),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.read_direct_forecast", return_value=(manifest, rows),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.reconcile_direct_forecasts", return_value=monitoring_dir,
+        ):
+            app = AppTest.from_function(app_script, default_timeout=10).run()
+            app.sidebar.radio(key="section").set_value("Chronos portafoglio").run()
+            app.button(key="calculate_direct_forecast").click().run()
+
+        self.assertFalse(app.exception)
+        self.assertIn("Percorso candidato e base", [item.value for item in app.subheader])
+        self.assertIn("Differenza tra previsto e reale", [item.value for item in app.subheader])
+        self.assertEqual(app.session_state["direct_forecast_path"], str(forecast_dir))
 
     def test_comparison_report_is_scoped_to_selection_and_shows_full_summary(self) -> None:
         output = self.comparison_report()
