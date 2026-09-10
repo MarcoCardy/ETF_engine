@@ -395,14 +395,31 @@ def _direct_portfolio_rows(portfolio) -> list[dict[str, object]]:
     return [{"id": item.component_id, "weight": item.weight * 100} for item in portfolio.components]
 
 
+def _invalidate_direct_results() -> None:
+    st.session_state.pop("direct_forecast_path", None)
+    st.session_state.pop("direct_monitoring_path", None)
+
+
+def _reset_direct_candidate(paths: DashboardPaths, state: DashboardState, reset_candidate_portfolio) -> None:
+    restored = reset_candidate_portfolio(paths, state)
+    _invalidate_direct_results()
+    st.session_state.chronos_candidate_draft = _direct_portfolio_rows(restored)
+    st.session_state.chronos_candidate_editor_generation = st.session_state.get(
+        "chronos_candidate_editor_generation", 0
+    ) + 1
+    st.rerun()
+
+
 def _render_chronos_portfolio(
     paths: DashboardPaths, state: DashboardState, status: DashboardDataStatus | None,
 ) -> None:
     from perpetual_engine.dashboard_chronos import (
+        direct_portfolio_sha256,
         load_chronos_config,
         load_direct_portfolios,
         publish_direct_forecast,
         read_direct_forecast,
+        read_direct_monitoring,
         reconcile_direct_forecasts,
         reset_candidate_portfolio,
         save_candidate_portfolio,
@@ -410,7 +427,16 @@ def _render_chronos_portfolio(
 
     st.header("Chronos portafoglio")
     st.info("Modulo sperimentale in modalità shadow: non modifica il portafoglio reale e non genera ordini.")
-    candidate, base = load_direct_portfolios(paths, state)
+    try:
+        candidate, base = load_direct_portfolios(paths, state)
+    except Exception as error:
+        _show_error(error)
+        if st.button("Ripristina portafoglio base", key="reset_chronos_candidate"):
+            try:
+                _reset_direct_candidate(paths, state, reset_candidate_portfolio)
+            except Exception as reset_error:
+                _show_error(reset_error)
+        return
     if "chronos_candidate_draft" not in st.session_state:
         st.session_state.chronos_candidate_draft = _direct_portfolio_rows(candidate)
     choices = list(dict.fromkeys(
@@ -427,24 +453,23 @@ def _render_chronos_portfolio(
         width="stretch",
     )
     st.session_state.chronos_candidate_draft = draft.to_dict("records")
+    st.caption("La generazione usa il portafoglio salvato; salva prima le modifiche alla tabella.")
+    if st.session_state.chronos_candidate_draft != _direct_portfolio_rows(candidate):
+        st.warning("Modifiche non salvate: previsione e risultati si riferiscono ancora al portafoglio salvato.")
     if st.button("Salva portafoglio da studiare", key="save_chronos_candidate"):
         try:
             saved = save_candidate_portfolio(paths, state, [
                 {"id": row["id"], "weight": float(row["weight"]) / 100}
                 for row in st.session_state.chronos_candidate_draft
             ])
+            _invalidate_direct_results()
             st.session_state.chronos_candidate_draft = _direct_portfolio_rows(saved)
             st.rerun()
         except Exception as error:
             _show_error(error)
     if st.button("Ripristina portafoglio base", key="reset_chronos_candidate"):
         try:
-            restored = reset_candidate_portfolio(paths, state)
-            st.session_state.chronos_candidate_draft = _direct_portfolio_rows(restored)
-            st.session_state.chronos_candidate_editor_generation = st.session_state.get(
-                "chronos_candidate_editor_generation", 0
-            ) + 1
-            st.rerun()
+            _reset_direct_candidate(paths, state, reset_candidate_portfolio)
         except Exception as error:
             _show_error(error)
     st.dataframe(pd.DataFrame(_direct_portfolio_rows(base)), hide_index=True, width="stretch")
@@ -460,8 +485,9 @@ def _render_chronos_portfolio(
                 state,
                 predictor=_cached_direct_predictor(str(paths.chronos_config), config.model_revision),
             )
+            monitoring_path = reconcile_direct_forecasts(paths, state)
             st.session_state.direct_forecast_path = str(result.output_dir)
-            st.session_state.direct_monitoring_path = str(reconcile_direct_forecasts(paths, state))
+            st.session_state.direct_monitoring_path = str(monitoring_path)
         except Exception as error:
             _show_error(error)
 
@@ -471,6 +497,9 @@ def _render_chronos_portfolio(
     try:
         output_dir = Path(forecast_path)
         manifest, rows = read_direct_forecast(output_dir, paths.chronos_output_root)
+        if manifest["candidate_sha256"] != direct_portfolio_sha256(candidate):
+            st.warning("I risultati non corrispondono al portafoglio salvato e non vengono mostrati. Genera una nuova previsione.")
+            return
         scenario = st.selectbox(
             "Scenario BCE",
             ("ECB_FLAT", "ECB_DOWN_100BP", "ECB_UP_100BP"),
@@ -506,9 +535,12 @@ def _render_chronos_portfolio(
 
         monitoring_path = st.session_state.get("direct_monitoring_path")
         if monitoring_path:
+            _monitoring_manifest, tables = read_direct_monitoring(
+                Path(monitoring_path), paths.chronos_output_root,
+            )
             st.subheader("Differenza tra previsto e reale")
             for name in ("forecast_vs_actual.csv", "pending_forecasts.csv", "live_metrics.csv"):
-                table = pd.read_csv(Path(monitoring_path) / name)
+                table = pd.DataFrame(tables[name])
                 if not table.empty:
                     st.markdown(f"**{name}**")
                     st.dataframe(table, hide_index=True, width="stretch")

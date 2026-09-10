@@ -584,6 +584,22 @@ class DirectReconciliationTests(DirectChronosFixture):
         self.assertEqual(component["count"], "1")
         self.assertNotEqual(component["interval_80_coverage"], "")
 
+    def test_monitoring_reader_rejects_unapproved_or_tampered_archives(self):
+        from perpetual_engine.dashboard_chronos import read_direct_monitoring, reconcile_direct_forecasts
+
+        self.publish_known_forecast()
+        monitoring = reconcile_direct_forecasts(self.paths, self.state)
+        manifest, tables = read_direct_monitoring(monitoring, self.paths.chronos_output_root)
+        self.assertEqual(manifest["monitoring_id"], monitoring.name)
+        self.assertEqual(set(tables), {"forecast_vs_actual.csv", "pending_forecasts.csv", "live_metrics.csv"})
+
+        with self.assertRaisesRegex(ValueError, "escapes monitoring root"):
+            read_direct_monitoring(monitoring, self.root / "unapproved")
+
+        (monitoring / "live_metrics.csv").write_text("tampered", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "hash"):
+            read_direct_monitoring(monitoring, self.paths.chronos_output_root)
+
     def test_reconciliation_uses_archived_weights_for_candidate_and_base(self):
         from perpetual_engine.dashboard_chronos import reconcile_direct_forecasts, save_candidate_portfolio
 

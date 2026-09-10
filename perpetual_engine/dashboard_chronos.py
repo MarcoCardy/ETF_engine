@@ -388,7 +388,7 @@ def _portfolio_payload(portfolio: DirectPortfolio) -> dict[str, object]:
     return {"label": portfolio.label, "components": [_component_payload(item) for item in portfolio.components]}
 
 
-def _portfolio_hash(portfolio: DirectPortfolio) -> str:
+def direct_portfolio_sha256(portfolio: DirectPortfolio) -> str:
     return hashlib.sha256(canonical_json(_portfolio_payload(portfolio))).hexdigest()
 
 
@@ -543,6 +543,7 @@ _METRIC_COLUMNS = (
     "scope", "scenario", "symbol", "isin", "portfolio_sha256", "horizon",
     "count", "bias", "mae", "rmse", "interval_80_coverage",
 )
+_MONITORING_FILES = {"forecast_vs_actual.csv", "pending_forecasts.csv", "live_metrics.csv", "manifest.json"}
 
 
 def _component_from_payload(value: object, label: str) -> DirectComponent:
@@ -928,6 +929,75 @@ def _monitoring_metrics(rows: list[dict[str, object]]) -> list[dict[str, object]
     return output
 
 
+def read_direct_monitoring(
+    path: Path,
+    output_root: Path,
+) -> tuple[dict[str, Any], dict[str, tuple[dict[str, str], ...]]]:
+    path = Path(path)
+    monitoring_root = (Path(output_root).resolve() / "monitoring").resolve()
+    resolved = path.resolve()
+    if not _is_sha256(path.name) or not path.is_dir() or resolved.parent != monitoring_root or resolved.name != path.name:
+        raise ValueError("direct monitoring path escapes monitoring root")
+    children = {item.name: item for item in resolved.iterdir()}
+    if set(children) != _MONITORING_FILES or any(
+        not item.is_file() or item.resolve().parent != resolved for item in children.values()
+    ):
+        raise ValueError("direct monitoring archive has unexpected files")
+    try:
+        payloads = {name: children[name].read_bytes() for name in _MONITORING_FILES}
+        manifest = json.loads(payloads["manifest.json"].decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("direct monitoring manifest is malformed") from error
+    required = {
+        "schema_version", "monitoring_id", "label", "price_vintage",
+        "included_forecast_manifest_sha256", "forecast_ids", "generated_sha256",
+    }
+    if (
+        not isinstance(manifest, dict)
+        or set(manifest) != required
+        or manifest.get("schema_version") != "DIRECT_CHRONOS_MONITORING_V1"
+        or manifest.get("label") != "PROSPECTIVE_TRACK_RECORD"
+        or canonical_json(manifest) != payloads["manifest.json"]
+    ):
+        raise ValueError("direct monitoring manifest schema is invalid")
+    generated = manifest.get("generated_sha256")
+    csv_names = _MONITORING_FILES - {"manifest.json"}
+    if not isinstance(generated, dict) or set(generated) != csv_names or any(
+        not _is_sha256(digest) or hashlib.sha256(payloads[name]).hexdigest() != digest
+        for name, digest in generated.items()
+    ):
+        raise ValueError("direct monitoring generated hash mismatch")
+    price_vintage = manifest.get("price_vintage")
+    forecast_hashes = manifest.get("included_forecast_manifest_sha256")
+    forecast_ids = manifest.get("forecast_ids")
+    if (
+        not isinstance(price_vintage, dict)
+        or set(price_vintage) != {"vintage_id", "manifest_sha256"}
+        or not all(_is_sha256(price_vintage.get(name)) for name in ("vintage_id", "manifest_sha256"))
+        or not isinstance(forecast_hashes, list)
+        or not all(_is_sha256(value) for value in forecast_hashes)
+        or not isinstance(forecast_ids, list)
+        or len(forecast_ids) != len(forecast_hashes)
+        or len(set(forecast_ids)) != len(forecast_ids)
+        or not all(_is_sha256(value) for value in forecast_ids)
+    ):
+        raise ValueError("direct monitoring manifest identity is invalid")
+    identity = {
+        "price_vintage_manifest_sha256": price_vintage["manifest_sha256"],
+        "included_forecast_manifest_sha256": forecast_hashes,
+    }
+    if manifest.get("monitoring_id") != path.name or hashlib.sha256(canonical_json(identity)).hexdigest() != path.name:
+        raise ValueError("direct monitoring identity/path mismatch")
+    tables = {
+        "forecast_vs_actual.csv": _read_csv(payloads["forecast_vs_actual.csv"], MONITORING_COLUMNS, "direct monitoring actual CSV"),
+        "pending_forecasts.csv": _read_csv(payloads["pending_forecasts.csv"], MONITORING_COLUMNS, "direct monitoring pending CSV"),
+        "live_metrics.csv": _read_csv(payloads["live_metrics.csv"], _METRIC_COLUMNS, "direct monitoring metrics CSV"),
+    }
+    if any(row["forecast_id"] not in forecast_ids for name in tuple(tables)[:2] for row in tables[name]):
+        raise ValueError("direct monitoring rows reference an unknown forecast")
+    return manifest, tables
+
+
 def reconcile_direct_forecasts(paths: DashboardPaths, state: DashboardState) -> Path:
     output_root = paths.chronos_output_root.resolve()
     project_root = paths.project_root.resolve()
@@ -1002,8 +1072,8 @@ def publish_direct_forecast(
     candidate_payload = _portfolio_payload(snapshot.candidate)
     base_payload = _portfolio_payload(snapshot.base)
     portfolios = {"candidate": candidate_payload, "base": base_payload}
-    candidate_hash = _portfolio_hash(snapshot.candidate)
-    base_hash = _portfolio_hash(snapshot.base)
+    candidate_hash = direct_portfolio_sha256(snapshot.candidate)
+    base_hash = direct_portfolio_sha256(snapshot.base)
     target_series = [_target_series_payload(series) for series in snapshot.series]
     model = {
         "id": config.model_id,
@@ -1285,7 +1355,7 @@ def prepare_direct_evaluation_request(paths: DashboardPaths, state: DashboardSta
     if hashlib.sha256(price_bytes).hexdigest() != snapshot.price_manifest_sha256:
         raise ValueError("price manifest hash changed while preparing evaluation")
     candidate = _portfolio_payload(snapshot.candidate)
-    candidate_hash = _portfolio_hash(snapshot.candidate)
+    candidate_hash = direct_portfolio_sha256(snapshot.candidate)
     model = {
         "id": config.model_id, "revision": config.model_revision, "package": "chronos-forecasting",
         "package_version": _chronos_package_version(), "device": config.device,
@@ -1407,7 +1477,7 @@ def _validated_request(
     ):
         raise ValueError("evaluation macro vintage identity is invalid")
     candidate = _portfolio_from_payload(payload.get("candidate"), "candidate")
-    if _portfolio_hash(candidate) != hashes["candidate_sha256"]:
+    if direct_portfolio_sha256(candidate) != hashes["candidate_sha256"]:
         raise ValueError("evaluation candidate hash mismatch")
     raw_series = payload.get("series")
     if not isinstance(raw_series, list) or len(raw_series) != 4:

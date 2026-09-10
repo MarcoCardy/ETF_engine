@@ -333,6 +333,48 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
         self.assertEqual(app.button(key="calculate_direct_forecast").label, "Genera previsione portafoglio")
         self.assertFalse((self.root / "data" / "dashboard_v1" / "chronos_candidate_portfolio.json").exists())
 
+    def test_invalid_saved_chronos_candidate_keeps_reset_reachable(self) -> None:
+        from perpetual_engine.dashboard_chronos import save_candidate_portfolio
+        from perpetual_engine.dashboard_service import (
+            DashboardPaths,
+            load_dashboard_state,
+            remove_catalog_entry,
+            save_dashboard_state,
+        )
+
+        paths = DashboardPaths.from_root(self.root)
+        state = load_dashboard_state(paths.default_config, paths.state)
+        save_candidate_portfolio(paths, state, (
+            {"id": "SWDA", "weight": 0.55},
+            {"id": "IWMO", "weight": 0.15},
+            {"id": "IWQU", "weight": 0.15},
+            {"id": "GRID", "weight": 0.15},
+        ))
+        save_dashboard_state(
+            paths.state,
+            remove_catalog_entry(state, "GRID"),
+            default_config_path=paths.default_config,
+        )
+
+        with patch.dict(os.environ, {"ETF_DASHBOARD_ROOT": str(self.root)}), patch(
+            "perpetual_engine.dashboard.refresh_dashboard_data",
+            side_effect=AssertionError("network refresh at startup"),
+        ), patch(
+            "perpetual_engine.dashboard.search_etfs",
+            side_effect=AssertionError("ETF search at startup"),
+        ):
+            app = AppTest.from_file(self.app_path, default_timeout=10).run()
+            app.sidebar.radio(key="section").set_value("Chronos portafoglio").run()
+
+            self.assertFalse(app.exception)
+            self.assertTrue(app.error)
+            self.assertEqual(app.button(key="reset_chronos_candidate").label, "Ripristina portafoglio base")
+
+            app.button(key="reset_chronos_candidate").click().run()
+
+        self.assertFalse(app.exception)
+        self.assertFalse(app.error)
+
     def test_chronos_portfolio_reset_replaces_editor_state(self) -> None:
         from perpetual_engine import dashboard
 
@@ -348,7 +390,7 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
         editor = Mock(return_value=edited)
         fake = SimpleNamespace(
             session_state=SessionState(),
-            header=Mock(), info=Mock(), data_editor=editor,
+            header=Mock(), info=Mock(), caption=Mock(), warning=Mock(), data_editor=editor,
             button=Mock(side_effect=lambda _label, **kwargs: kwargs["key"] == "reset_chronos_candidate"),
             dataframe=Mock(), rerun=Mock(),
             column_config=SimpleNamespace(SelectboxColumn=Mock(), NumberColumn=Mock()),
@@ -365,8 +407,91 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
         self.assertEqual(fake.session_state["chronos_candidate_editor_generation"], 1)
         self.assertEqual(fake.session_state["chronos_candidate_draft"], [{"id": "SWDA", "weight": 60.0}])
 
+    def test_chronos_candidate_reset_invalidates_displayed_results(self) -> None:
+        from perpetual_engine import dashboard
+
+        class SessionState(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
+        fake = SimpleNamespace(
+            session_state=SessionState(
+                direct_forecast_path="old-forecast",
+                direct_monitoring_path="old-monitoring",
+            ),
+            rerun=Mock(),
+        )
+        restored = SimpleNamespace(components=(SimpleNamespace(component_id="SWDA", weight=0.60),))
+        with patch.object(dashboard, "st", fake):
+            dashboard._reset_direct_candidate(
+                SimpleNamespace(), SimpleNamespace(), Mock(return_value=restored),
+            )
+
+        self.assertNotIn("direct_forecast_path", fake.session_state)
+        self.assertNotIn("direct_monitoring_path", fake.session_state)
+
+    def test_chronos_candidate_save_invalidates_displayed_results(self) -> None:
+        from perpetual_engine import dashboard
+
+        class SessionState(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
+        class Rerun(BaseException):
+            pass
+
+        component = SimpleNamespace(component_id="SWDA", weight=1.0)
+        portfolio = SimpleNamespace(components=(component,))
+        fake = SimpleNamespace(
+            session_state=SessionState(
+                chronos_candidate_draft=[{"id": "SWDA", "weight": 100.0}],
+                direct_forecast_path="old-forecast",
+                direct_monitoring_path="old-monitoring",
+            ),
+            header=Mock(), info=Mock(), caption=Mock(), warning=Mock(), data_editor=Mock(return_value=dashboard.pd.DataFrame([
+                {"id": "SWDA", "weight": 100.0},
+            ])),
+            button=Mock(side_effect=lambda _label, **kwargs: kwargs["key"] == "save_chronos_candidate"),
+            rerun=Mock(side_effect=Rerun),
+            column_config=SimpleNamespace(SelectboxColumn=Mock(), NumberColumn=Mock()),
+        )
+        with patch.object(dashboard, "st", fake), patch(
+            "perpetual_engine.dashboard_chronos.load_direct_portfolios", return_value=(portfolio, portfolio),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.save_candidate_portfolio", return_value=portfolio,
+        ), self.assertRaises(Rerun):
+            dashboard._render_chronos_portfolio(SimpleNamespace(), SimpleNamespace(catalog=()), None)
+
+        self.assertNotIn("direct_forecast_path", fake.session_state)
+        self.assertNotIn("direct_monitoring_path", fake.session_state)
+
+    def test_unsaved_chronos_candidate_is_explicitly_marked_as_not_used(self) -> None:
+        from perpetual_engine import dashboard
+
+        class SessionState(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
+        component = SimpleNamespace(component_id="SWDA", weight=0.60)
+        portfolio = SimpleNamespace(components=(component,))
+        fake = SimpleNamespace(
+            session_state=SessionState(),
+            header=Mock(), info=Mock(), caption=Mock(), warning=Mock(),
+            data_editor=Mock(return_value=dashboard.pd.DataFrame([{"id": "SWDA", "weight": 55.0}])),
+            button=Mock(return_value=False), dataframe=Mock(),
+            column_config=SimpleNamespace(SelectboxColumn=Mock(), NumberColumn=Mock()),
+        )
+        with patch.object(dashboard, "st", fake), patch(
+            "perpetual_engine.dashboard_chronos.load_direct_portfolios", return_value=(portfolio, portfolio),
+        ):
+            dashboard._render_chronos_portfolio(SimpleNamespace(), SimpleNamespace(catalog=()), None)
+
+        self.assertIn("portafoglio salvato", fake.caption.call_args.args[0])
+        self.assertIn("Modifiche non salvate", fake.warning.call_args.args[0])
+
     def test_direct_forecast_renders_candidate_base_and_monitoring(self) -> None:
         from perpetual_engine import dashboard
+        from perpetual_engine.dashboard_chronos import direct_portfolio_sha256, load_direct_portfolios
         from perpetual_engine.dashboard_service import DashboardPaths, load_dashboard_state, refresh_dashboard_data
         from tests.test_portfolio_monitor import daily_bytes, months, prices_from_returns
 
@@ -377,6 +502,12 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
         prices = daily_bytes(list(prices_from_returns(dates, (0.01,) * 13).items()))
         refresh_dashboard_data(paths, state, downloader=lambda _ticker: prices, retrieved_at=datetime(2026, 3, 2, tzinfo=timezone.utc))
         forecast_dir, monitoring_dir, manifest, rows = self.direct_forecast_archive()
+        manifest["candidate_sha256"] = direct_portfolio_sha256(load_direct_portfolios(paths, state)[0])
+        monitoring_tables = {
+            name: ({"archive": name},)
+            for name in ("forecast_vs_actual.csv", "pending_forecasts.csv", "live_metrics.csv")
+        }
+        read_monitoring = Mock(return_value=({}, monitoring_tables))
 
         def app_script():
             from perpetual_engine.dashboard import main
@@ -391,15 +522,103 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
             "perpetual_engine.dashboard_chronos.read_direct_forecast", return_value=(manifest, rows),
         ), patch(
             "perpetual_engine.dashboard_chronos.reconcile_direct_forecasts", return_value=monitoring_dir,
+        ), patch(
+            "perpetual_engine.dashboard_chronos.read_direct_monitoring", read_monitoring,
         ):
             app = AppTest.from_function(app_script, default_timeout=10).run()
             app.sidebar.radio(key="section").set_value("Chronos portafoglio").run()
             app.button(key="calculate_direct_forecast").click().run()
 
         self.assertFalse(app.exception)
+        self.assertFalse(app.error)
         self.assertIn("Percorso candidato e base", [item.value for item in app.subheader])
         self.assertIn("Differenza tra previsto e reale", [item.value for item in app.subheader])
         self.assertEqual(app.session_state["direct_forecast_path"], str(forecast_dir))
+        read_monitoring.assert_called_once_with(monitoring_dir, paths.chronos_output_root)
+
+    def test_failed_reconciliation_keeps_the_last_complete_forecast_monitoring_pair(self) -> None:
+        from perpetual_engine import dashboard
+        from perpetual_engine.dashboard_chronos import direct_portfolio_sha256, load_direct_portfolios
+        from perpetual_engine.dashboard_service import DashboardPaths, load_dashboard_state, refresh_dashboard_data
+        from tests.test_portfolio_monitor import daily_bytes, months, prices_from_returns
+
+        shutil.copy2(Path(__file__).parents[1] / "config" / "chronos_v1.json", self.root / "config" / "chronos_v1.json")
+        paths = DashboardPaths.from_root(self.root)
+        state = load_dashboard_state(paths.default_config, paths.state)
+        dates = months(14)
+        prices = daily_bytes(list(prices_from_returns(dates, (0.01,) * 13).items()))
+        refresh_dashboard_data(paths, state, downloader=lambda _ticker: prices, retrieved_at=datetime(2026, 3, 2, tzinfo=timezone.utc))
+        old_forecast, monitoring, manifest, rows = self.direct_forecast_archive()
+        manifest["candidate_sha256"] = direct_portfolio_sha256(load_direct_portfolios(paths, state)[0])
+        new_forecast = old_forecast.parent / ("e" * 64)
+        shutil.copytree(old_forecast, new_forecast)
+        tables = {
+            name: ({"archive": name},)
+            for name in ("forecast_vs_actual.csv", "pending_forecasts.csv", "live_metrics.csv")
+        }
+
+        def app_script():
+            from perpetual_engine.dashboard import main
+            main()
+
+        with patch.dict(os.environ, {"ETF_DASHBOARD_ROOT": str(self.root)}), patch.object(
+            dashboard, "_cached_direct_predictor", return_value=object(),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.publish_direct_forecast",
+            side_effect=(SimpleNamespace(output_dir=old_forecast), SimpleNamespace(output_dir=new_forecast)),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.read_direct_forecast", return_value=(manifest, rows),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.reconcile_direct_forecasts",
+            side_effect=(monitoring, ValueError("reconciliation failed")),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.read_direct_monitoring", return_value=({}, tables),
+        ):
+            app = AppTest.from_function(app_script, default_timeout=10).run()
+            app.sidebar.radio(key="section").set_value("Chronos portafoglio").run()
+            app.button(key="calculate_direct_forecast").click().run()
+            app.button(key="calculate_direct_forecast").click().run()
+
+        self.assertFalse(app.exception)
+        self.assertTrue(app.error)
+        self.assertEqual(app.session_state["direct_forecast_path"], str(old_forecast))
+        self.assertEqual(app.session_state["direct_monitoring_path"], str(monitoring))
+
+    def test_forecast_from_another_saved_candidate_is_not_rendered(self) -> None:
+        from perpetual_engine import dashboard
+        from perpetual_engine.dashboard_service import DashboardPaths
+
+        shutil.copy2(Path(__file__).parents[1] / "config" / "chronos_v1.json", self.root / "config" / "chronos_v1.json")
+        paths = DashboardPaths.from_root(self.root)
+        forecast, monitoring, manifest, rows = self.direct_forecast_archive()
+        read_monitoring = Mock(return_value=({}, {
+            name: ({"archive": name},)
+            for name in ("forecast_vs_actual.csv", "pending_forecasts.csv", "live_metrics.csv")
+        }))
+
+        def app_script():
+            from perpetual_engine.dashboard import main
+            main()
+
+        with patch.dict(os.environ, {"ETF_DASHBOARD_ROOT": str(self.root)}), patch.object(
+            dashboard, "_cached_direct_predictor", return_value=object(),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.read_direct_forecast", return_value=(manifest, rows),
+        ), patch(
+            "perpetual_engine.dashboard_chronos.read_direct_monitoring", read_monitoring,
+        ):
+            app = AppTest.from_function(app_script, default_timeout=10).run()
+            app.sidebar.radio(key="section").set_value("Chronos portafoglio").run()
+            app.session_state["direct_forecast_path"] = str(forecast)
+            app.session_state["direct_monitoring_path"] = str(monitoring)
+            app.run()
+
+        self.assertFalse(app.exception)
+        self.assertFalse(app.error)
+        self.assertIn("non corrispondono al portafoglio salvato", " ".join(item.value for item in app.warning))
+        self.assertNotIn("Percorso candidato e base", [item.value for item in app.subheader])
+        self.assertNotIn("Differenza tra previsto e reale", [item.value for item in app.subheader])
+        read_monitoring.assert_not_called()
 
     def test_comparison_report_is_scoped_to_selection_and_shows_full_summary(self) -> None:
         output = self.comparison_report()
