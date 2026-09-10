@@ -104,7 +104,7 @@ class DashboardAppTests(unittest.TestCase):
         self.assertEqual(app.title[0].value, "Analisi ETF")
         self.assertEqual(
             app.sidebar.radio(key="section").options,
-            ["Portafoglio", "ETF", "Confronti", "Previsioni Chronos"],
+            ["Portafoglio", "ETF", "Confronti", "Chronos rischio", "Chronos portafoglio"],
         )
 
     def test_streamlit_entrypoint_does_not_shadow_installed_chronos_package(self) -> None:
@@ -232,7 +232,7 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
         )
 
     def test_chronos_section_exposes_shadow_mode_without_trading(self) -> None:
-        app = self.run_app("Previsioni Chronos")
+        app = self.run_app("Chronos rischio")
 
         self.assertFalse(app.exception)
         self.assertIn("modalità shadow", app.info[0].value)
@@ -242,6 +242,15 @@ raise SystemExit(0 if origin != dashboard.parent / "chronos.py" else 2)
         self.assertEqual(app.button(key="start_ablation_evaluation").label, "Avvia valutazione ablation")
         series = set(app.dataframe[0].value["series"])
         self.assertTrue({"VIX", "US_TREASURY_10Y_REAL", "US_10Y_BREAKEVEN", "DAMODARAN_ERP", "US_CPI"} <= series)
+
+    def test_chronos_portfolio_is_reachable_without_mutating_candidate(self) -> None:
+        app = self.run_app("Chronos portafoglio")
+
+        self.assertFalse(app.exception)
+        self.assertEqual(app.button(key="save_chronos_candidate").label, "Salva portafoglio da studiare")
+        self.assertEqual(app.button(key="reset_chronos_candidate").label, "Ripristina portafoglio base")
+        self.assertEqual(app.button(key="calculate_direct_forecast").label, "Genera previsione portafoglio")
+        self.assertFalse((self.root / "data" / "dashboard_v1" / "chronos_candidate_portfolio.json").exists())
 
     def test_comparison_report_is_scoped_to_selection_and_shows_full_summary(self) -> None:
         output = self.comparison_report()

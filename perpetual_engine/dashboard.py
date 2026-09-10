@@ -391,6 +391,63 @@ def _render_chronos(paths: DashboardPaths, status: DashboardDataStatus | None) -
         _show_error(error)
 
 
+def _direct_portfolio_rows(portfolio) -> list[dict[str, object]]:
+    return [{"id": item.component_id, "weight": item.weight * 100} for item in portfolio.components]
+
+
+def _render_chronos_portfolio(
+    paths: DashboardPaths, state: DashboardState, status: DashboardDataStatus | None,
+) -> None:
+    from perpetual_engine.dashboard_chronos import (
+        load_direct_portfolios,
+        reset_candidate_portfolio,
+        save_candidate_portfolio,
+    )
+
+    st.header("Chronos portafoglio")
+    st.info("Modulo sperimentale in modalità shadow: non modifica il portafoglio reale e non genera ordini.")
+    candidate, base = load_direct_portfolios(paths, state)
+    if "chronos_candidate_draft" not in st.session_state:
+        st.session_state.chronos_candidate_draft = _direct_portfolio_rows(candidate)
+    choices = list(dict.fromkeys(
+        [item.component_id for item in base.components] + [item.study_id for item in state.catalog]
+    ))
+    draft = st.data_editor(
+        pd.DataFrame(st.session_state.chronos_candidate_draft),
+        key="chronos_candidate_editor",
+        num_rows="fixed",
+        column_config={
+            "id": st.column_config.SelectboxColumn("ETF", options=choices, required=True),
+            "weight": st.column_config.NumberColumn("Peso %", min_value=0.01, format="%.2f"),
+        },
+        width="stretch",
+    )
+    st.session_state.chronos_candidate_draft = draft.to_dict("records")
+    if st.button("Salva portafoglio da studiare", key="save_chronos_candidate"):
+        try:
+            saved = save_candidate_portfolio(paths, state, [
+                {"id": row["id"], "weight": float(row["weight"]) / 100}
+                for row in st.session_state.chronos_candidate_draft
+            ])
+            st.session_state.chronos_candidate_draft = _direct_portfolio_rows(saved)
+            st.rerun()
+        except Exception as error:
+            _show_error(error)
+    if st.button("Ripristina portafoglio base", key="reset_chronos_candidate"):
+        try:
+            restored = reset_candidate_portfolio(paths, state)
+            st.session_state.chronos_candidate_draft = _direct_portfolio_rows(restored)
+            st.rerun()
+        except Exception as error:
+            _show_error(error)
+    st.dataframe(pd.DataFrame(_direct_portfolio_rows(base)), hide_index=True, width="stretch")
+    st.button(
+        "Genera previsione portafoglio",
+        key="calculate_direct_forecast",
+        disabled=status is None or not status.available,
+    )
+
+
 @st.cache_resource(max_entries=2)
 def _cached_risk_predictor(config_path: str, model_revision: str):
     del model_revision
@@ -466,15 +523,19 @@ def main(paths: DashboardPaths | None = None) -> None:
                 _show_error(reset_error)
         return
     status = _render_status(paths, state)
-    section = st.sidebar.radio("Sezione", ("Portafoglio", "ETF", "Confronti", "Previsioni Chronos"), key="section")
+    section = st.sidebar.radio(
+        "Sezione", ("Portafoglio", "ETF", "Confronti", "Chronos rischio", "Chronos portafoglio"), key="section"
+    )
     if section == "Portafoglio":
         _render_portfolio(paths, state)
     elif section == "ETF":
         _render_etf(paths, state)
     elif section == "Confronti":
         _render_comparisons(paths, state, status)
-    else:
+    elif section == "Chronos rischio":
         _render_chronos(paths, status)
+    else:
+        _render_chronos_portfolio(paths, state, status)
 
 
 if __name__ == "__main__":
