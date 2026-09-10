@@ -1,2 +1,2 @@
-config_version,lifecycle,state,real_capital,hwm_real,ratcheted_floor_real,target_net_real,delivered_net_real,total_outflow_real,errors
+config_version,lifecycle,state,real_capital,hwm_real,ratcheted_floor_real,target_gross_real,delivered_net_real,total_outflow_real,errors
 1.0,GROWTH,DATA_INCOMPLETE,0,614590.86,600000,0,0,0,CPI base and current observations are required

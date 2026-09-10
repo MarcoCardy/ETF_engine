@@ -8,3 +8,10 @@ work/yfinance-cache/
 .worktrees/
 data/dashboard_v1/
 outputs/dashboard_v1/
+.tmp_xfinance_probe/
+.superpowers/
+.claude/
+outputs/chronos_risk_v1/
+outputs/dro_v1/
+outputs/studies/
+
