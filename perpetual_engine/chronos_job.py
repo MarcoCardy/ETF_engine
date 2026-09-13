@@ -3,7 +3,7 @@ from __future__ import annotations
 import errno
 import json
 import math
-import msvcrt
+from perpetual_engine.file_lock import msvcrt
 import os
 import stat
 import subprocess
@@ -212,7 +212,7 @@ def start_evaluation_job(paths: DashboardPaths, state: DashboardState, *, launch
                      '--state', str(paths.chronos_job), '--lock', str(lock_path)],
                     cwd=paths.project_root, stdin=subprocess.DEVNULL, stdout=log_handle,
                     stderr=subprocess.STDOUT, close_fds=True,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    creationflags=getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) | getattr(subprocess, 'CREATE_NO_WINDOW', 0),
                 )
         except Exception:
             job = replace(job, state='FAILED', message=_MESSAGES['FAILED'], updated_at=datetime.now(timezone.utc))

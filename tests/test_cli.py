@@ -6,7 +6,9 @@ from unittest import TestCase
 from unittest.mock import patch
 
 
-PYTHON = Path(".venv/Scripts/python.exe")
+import sys
+
+PYTHON = Path(".venv/Scripts/python.exe") if Path(".venv/Scripts/python.exe").exists() else Path(sys.executable)
 
 
 class CliTests(TestCase):

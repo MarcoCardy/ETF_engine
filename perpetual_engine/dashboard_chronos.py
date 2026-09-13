@@ -1272,28 +1272,36 @@ def _evaluation_publication(output_root: Path):
     """Pin real directory names against Windows rename/delete through publication."""
     if not output_root.is_absolute() or '..' in output_root.parts:
         raise ValueError('evaluation output path must be absolute without traversal')
-    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-    create = kernel.CreateFileW
-    create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
-                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
-    create.restype = wintypes.HANDLE
-    close = kernel.CloseHandle
-    close.argtypes = (wintypes.HANDLE,)
-    close.restype = wintypes.BOOL
     directories = (*reversed(output_root.parents), output_root,
                    *(output_root / name for name in ('requests', 'evaluations', '.staging')))
-    with ExitStack() as handles:
+    if hasattr(ctypes, 'WinDLL'):
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        create = kernel.CreateFileW
+        create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                           wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+        create.restype = wintypes.HANDLE
+        close = kernel.CloseHandle
+        close.argtypes = (wintypes.HANDLE,)
+        close.restype = wintypes.BOOL
+        with ExitStack() as handles:
+            for path in directories:
+                # Each parent is already pinned: mkdir cannot traverse a concurrently replaced ancestor.
+                path.mkdir(exist_ok=True)
+                # OPEN_EXISTING, BACKUP_SEMANTICS | OPEN_REPARSE_POINT, share read/write but NOT delete.
+                handle = create(str(path), 0x80000000, 3, None, 3, 0x02200000, None)
+                if handle == ctypes.c_void_p(-1).value:
+                    if ctypes.get_last_error() == 5 and path in output_root.parents:
+                        # An ancestor denied even metadata access, so this process cannot rename it either.
+                        continue
+                    raise ctypes.WinError(ctypes.get_last_error())
+                handles.callback(close, handle)
+                if path.is_symlink() or path.resolve() != path or not path.is_dir():
+                    raise ValueError('evaluation publication directory is not a real non-link path')
+            with _publication_lock(output_root):
+                yield
+    else:
         for path in directories:
-            # Each parent is already pinned: mkdir cannot traverse a concurrently replaced ancestor.
             path.mkdir(exist_ok=True)
-            # OPEN_EXISTING, BACKUP_SEMANTICS | OPEN_REPARSE_POINT, share read/write but NOT delete.
-            handle = create(str(path), 0x80000000, 3, None, 3, 0x02200000, None)
-            if handle == ctypes.c_void_p(-1).value:
-                if ctypes.get_last_error() == 5 and path in output_root.parents:
-                    # An ancestor denied even metadata access, so this process cannot rename it either.
-                    continue
-                raise ctypes.WinError(ctypes.get_last_error())
-            handles.callback(close, handle)
             if path.is_symlink() or path.resolve() != path or not path.is_dir():
                 raise ValueError('evaluation publication directory is not a real non-link path')
         with _publication_lock(output_root):

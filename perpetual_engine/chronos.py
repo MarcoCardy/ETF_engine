@@ -5,7 +5,7 @@ import hashlib
 import io
 import json
 import math
-import msvcrt
+from perpetual_engine.file_lock import msvcrt
 import os
 import stat
 import tempfile
@@ -118,7 +118,7 @@ def _publication_lock(output_root: Path):
             before = lock_path.lstat()
             if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
                 raise ValueError("publication lock link escapes its output root direct child")
-            descriptor = os.open(lock_path, os.O_RDWR | os.O_BINARY)
+            descriptor = os.open(lock_path, os.O_RDWR | getattr(os, "O_BINARY", 0))
             current = lock_path.lstat()
             resolved_lock = lock_path.resolve(strict=True)
             opened = os.fstat(descriptor)
