@@ -1746,10 +1746,15 @@ class ChronosMonitoringTests(unittest.TestCase):
             'with _publication_lock(Path(sys.argv[1])):\n'
             ' print("locked", flush=True)\n sys.stdin.read(1)\n'
         )
+        popen_kwargs = dict(
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True,
+        )
+        if hasattr(subprocess, 'CREATE_NO_WINDOW'):
+            popen_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
         process = subprocess.Popen(
             [sys.executable, '-c', code, str(self.output_root)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+            **popen_kwargs,
         )
         release = threading.Event()
 

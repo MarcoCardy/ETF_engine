@@ -1,5 +1,5 @@
 import json
-import msvcrt
+from perpetual_engine.file_lock import msvcrt
 import os
 import shutil
 import subprocess
@@ -52,7 +52,8 @@ class EvaluationJobTests(TestCase):
         self.assertEqual(command[:5], [sys.executable, '-m', 'perpetual_engine', 'chronos', 'dashboard-evaluate-worker'])
         self.assertEqual(self.worker_args()[:3], (self.root, self.request, self.paths.chronos_job))
         options = self.launcher.call_args.kwargs
-        self.assertEqual(options['creationflags'], subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW)
+        expected_flags = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) | getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        self.assertEqual(options['creationflags'], expected_flags)
         self.assertEqual(options['stdin'], subprocess.DEVNULL)
         self.assertEqual(options['stderr'], subprocess.STDOUT)
         self.assertTrue(options['close_fds'])
@@ -372,6 +373,8 @@ class EvaluationJobTests(TestCase):
                 self._check_publication_race('worker', child)
 
     def test_evaluation_publication_directories_cannot_be_swapped_at_commit(self):
+        if sys.platform != 'win32':
+            self.skipTest("Windows-specific directory handle locking test")
         from tests.test_dashboard_chronos import DirectEvaluationTests
         from perpetual_engine import dashboard_chronos
 
